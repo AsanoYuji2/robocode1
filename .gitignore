@@ -1,0 +1,23 @@
+
+# Visual Studioの設定ファイル
+.vs/
+*.suo
+*.user
+*.userosscache
+
+# ビルド生成物
+Debug/
+Release/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+
+# 一時ファイル
+*.tmp
+*.log
