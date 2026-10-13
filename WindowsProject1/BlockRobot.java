@@ -3,11 +3,11 @@ import robocode.AdvancedRobot;
 public class BlockRobot extends AdvancedRobot {
     @Override
     public void run() {
-        setFire(2);
+        setAhead(100);
         execute();
         setTurnRight(90);
         execute();
-        setAhead(100);
+        setFire(2);
         execute();
     }
 }
