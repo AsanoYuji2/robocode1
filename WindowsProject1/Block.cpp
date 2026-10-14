@@ -172,6 +172,16 @@ std::wstring GetBlockName(const Block& b)
     return L"不明";
 }
 
+
+std::wstring GetBlockName(BlockType type)
+{
+    Block block;
+    block.type = type;
+
+    return GetBlockName(block);
+}
+
+
 // ============================================================
 // ブロックの当たり判定
 // ============================================================
@@ -363,6 +373,8 @@ static bool CheckCondition(
 
         case ConditionType::VariableNotEqual:
             return currentValue != targetValue;
+
+
 
         default:
             return false;

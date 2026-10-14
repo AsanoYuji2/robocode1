@@ -63,6 +63,7 @@ struct Block
 
 COLORREF GetBlockColor(BlockType type);
 std::wstring GetBlockName(const Block& block);
+std::wstring GetBlockName(BlockType type);
 bool HitBlock(const Block& block, int x, int y);
 void DrawBlock(HDC hdc, const Block& block);
 
