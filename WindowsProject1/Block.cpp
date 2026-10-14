@@ -1,12 +1,48 @@
 #include "Block.h"
 COLORREF GetBlockColor(BlockType t)
 {
-	switch (t) { case BlockType::Move:return RGB(52, 120, 212); case BlockType::Turn:return RGB(38, 153, 100); case BlockType::Fire:return RGB(218, 133, 39); } return RGB(100, 100, 100);
+	switch (t) 
+	{
+	// 色を設定
+	// 前進する
+	case BlockType::Move:return RGB(52, 120, 212);
+
+	// 右に旋回
+	case BlockType::Turn:return RGB(38, 153, 100);
+
+	// 左に旋回
+	case BlockType::TurnLeft:return RGB(38, 153, 100);
+
+	// 右に移動
+	case BlockType::MoveRight:return RGB(0, 180, 200); // 水色
+
+	// 左に移動
+	case BlockType::MoveLeft:return RGB(0, 140, 160);  //青緑色
+
+	// 弾を発射 威力
+	case BlockType::Fire:return RGB(218, 133, 39); 
+
+	// 後退
+	case BlockType::Bark:return RGB(140, 80, 180);
+	} 
+	return RGB(100, 100, 100);
 }
+
 std::wstring GetBlockName(BlockType t)
 {
-	switch (t) { case BlockType::Move:return L"前進する 100"; case BlockType::Turn:return L"右に旋回 90度"; case BlockType::Fire:return L"弾を発射 威力2"; } return L"不明";
+	switch (t) 
+	{ 
+	case BlockType::Move:return L"前進する 100"; 
+	case BlockType::Turn:return L"右に旋回 90度"; 
+	case BlockType::TurnLeft:return L"左に旋回 90度";
+	case BlockType::MoveLeft:return L"左に移動 100";
+	case BlockType::MoveRight:return L"右に移動 100";
+	case BlockType::Fire:return L"弾を発射 威力2"; 
+	case BlockType::Bark:return L"後退する 100";
+	} 
+	return L"不明";
 }
+
 bool HitBlock(const Block& b, int x, int y) { return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h; }
 void DrawBlock(HDC hdc, const Block& b)
 {
