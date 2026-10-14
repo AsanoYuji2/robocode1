@@ -139,10 +139,20 @@ void InitializeBlockList(HWND list)
 void UpdateButtonColors()
 {
     if (g_addButton)
-        InvalidateRect(g_addButton, nullptr, FALSE);
+        RedrawWindow(
+            g_addButton,
+            nullptr,
+            nullptr,
+            RDW_INVALIDATE | RDW_UPDATENOW
+        );
 
     if (g_deleteButton)
-        InvalidateRect(g_deleteButton, nullptr, FALSE);
+        RedrawWindow(
+            g_deleteButton,
+            nullptr,
+            nullptr,
+            RDW_INVALIDATE | RDW_UPDATENOW
+        );
 }
 
 
@@ -877,7 +887,10 @@ LRESULT CALLBACK WndProc(
         // 右ドラッグ中以外はブロック操作
         g_manager.OnMouseMove(x, y);
 
-        InvalidateRect(hwnd, nullptr, FALSE);
+        if (g_manager.IsDragging())
+        {
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
         return 0;
     }
 
