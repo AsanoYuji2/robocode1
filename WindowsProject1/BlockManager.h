@@ -15,18 +15,15 @@ public:
     void OnMouseUp(HWND hwnd);
 
     const std::vector<Block>& GetBlocks() const;
+    std::vector<int> GetExecutionOrder() const;
 
 private:
     std::vector<Block> blocks;
-
-    // parent[i] はブロック i の接続先（上のブロック）
-    // -1 はどのブロックにも接続していない状態
     std::vector<int> parent;
 
     int selected = -1;
     int offsetX = 0;
     int offsetY = 0;
-
     int lastX = 0;
     int lastY = 0;
 
@@ -35,6 +32,8 @@ private:
 
     void SnapSelectedBlock();
     void MoveConnectedBlocks(int dx, int dy);
+
     bool IsDescendant(int blockIndex, int ancestorIndex) const;
     bool HasChild(int blockIndex) const;
+    int GetChild(int blockIndex) const;
 };
