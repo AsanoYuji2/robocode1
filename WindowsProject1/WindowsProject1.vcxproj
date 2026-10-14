@@ -130,6 +130,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Block.h" />
+    <ClInclude Include="BlockFileManager.h" />
     <ClInclude Include="BlockManager.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="JavaGenerator.h" />
@@ -139,6 +140,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Block.cpp" />
+    <ClCompile Include="BlockFileManager.cpp" />
     <ClCompile Include="BlockManager.cpp" />
     <ClCompile Include="JavaGenerator.cpp" />
     <ClCompile Include="Main.cpp" />
