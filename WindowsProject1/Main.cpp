@@ -264,41 +264,19 @@ LRESULT CALLBACK BlockListProc(
 
     case WM_MOUSEMOVE:
     {
-        // 右ドラッグ中は画面を移動
-        if (g_panning && (wp & MK_RBUTTON))
+        x = GET_X_LPARAM(lp);
+        y = GET_Y_LPARAM(lp);
+
+        // リストからのドラッグ開始判定
+        if (GetCapture() == hwnd && (wp & MK_LBUTTON))
         {
-            g_viewX += static_cast<float>(
-                x - g_lastPanPoint.x
-                );
+            int dx = x - g_dragStart.x;
+            int dy = y - g_dragStart.y;
 
-            g_viewY += static_cast<float>(
-                y - g_lastPanPoint.y
-                );
-
-            g_lastPanPoint = { x, y };
-
-            UpdateView();
-            InvalidateRect(hwnd, nullptr, FALSE);
-
-            return 0;
-        }
-
-        // 右ドラッグが終了した場合
-        if (g_panning)
-        {
-            g_panning = false;
-
-            if (GetCapture() == hwnd)
-                ReleaseCapture();
-        }
-
-        // ブロックの移動処理
-        g_manager.OnMouseMove(x, y);
-
-        // ドラッグ中だけ再描画
-        if (g_manager.IsDragging())
-        {
-            InvalidateRect(hwnd, nullptr, FALSE);
+            if (dx * dx + dy * dy >= 16)
+            {
+                g_draggingFromList = true;
+            }
         }
 
         return 0;
