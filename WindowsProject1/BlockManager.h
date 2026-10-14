@@ -32,6 +32,15 @@ public:
     POINT ScreenToWorld(int x, int y) const;
     POINT WorldToScreen(int x, int y) const;
 
+    // ï€ë∂ÅEì«Ç›çûÇ›óp
+    const std::vector<int>& GetParents() const;
+
+    bool ReplaceBlocks(
+        const std::vector<Block>& newBlocks,
+        const std::vector<int>& newParents);
+
+    bool IsDragging() const;
+
 private:
     std::vector<Block> blocks;
     std::vector<int> parent;

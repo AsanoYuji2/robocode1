@@ -9,6 +9,12 @@
 #include "BlockManager.h"
 #include "JavaGenerator.h"
 
+#include <commdlg.h>
+#include "BlockFileManager.h"
+
+#pragma comment(lib, "Comdlg32.lib")
+
+
 BlockManager g_manager;
 
 HWND g_blockList = nullptr;
@@ -48,6 +54,8 @@ constexpr int ID_ADD = 1002;
 constexpr int ID_DELETE = 1003;
 constexpr int ID_BLOCK_LIST = 1004;
 constexpr int ID_RESET_VIEW = 1005;
+constexpr int ID_SAVE = 1006;
+constexpr int ID_LOAD = 1007;
 
 const COLORREF COLOR_NORMAL = RGB(65, 65, 75);
 const COLORREF COLOR_ADD_ON = RGB(40, 120, 220);
@@ -105,7 +113,10 @@ void InitializeBlockList(HWND list)
 
     for (BlockType type : types)
     {
-        std::wstring name = GetBlockName(type);
+        Block block{};
+        block.type = type;
+
+        std::wstring name = GetBlockName(block);
 
         SendMessageW(
             list,
@@ -205,6 +216,9 @@ LRESULT CALLBACK BlockListProc(
     WPARAM wp,
     LPARAM lp)
 {
+    int x = 0;
+    int y = 0;
+
     switch (msg)
     {
     case WM_LBUTTONDOWN:
@@ -250,32 +264,44 @@ LRESULT CALLBACK BlockListProc(
 
     case WM_MOUSEMOVE:
     {
-        if (GetCapture() == hwnd && (wp & MK_LBUTTON))
+        // 右ドラッグ中は画面を移動
+        if (g_panning && (wp & MK_RBUTTON))
         {
-            POINT current =
-            {
-                GET_X_LPARAM(lp),
-                GET_Y_LPARAM(lp)
-            };
+            g_viewX += static_cast<float>(
+                x - g_lastPanPoint.x
+                );
 
-            if (
-                std::abs(current.x - g_dragStart.x) >
-                GetSystemMetrics(SM_CXDRAG) ||
-                std::abs(current.y - g_dragStart.y) >
-                GetSystemMetrics(SM_CYDRAG)
-                )
-            {
-                g_draggingFromList = true;
-            }
+            g_viewY += static_cast<float>(
+                y - g_lastPanPoint.y
+                );
 
-            if (g_draggingFromList)
-            {
-                SetCursor(LoadCursorW(nullptr, IDC_HAND));
-                return 0;
-            }
+            g_lastPanPoint = { x, y };
+
+            UpdateView();
+            InvalidateRect(hwnd, nullptr, FALSE);
+
+            return 0;
         }
 
-        break;
+        // 右ドラッグが終了した場合
+        if (g_panning)
+        {
+            g_panning = false;
+
+            if (GetCapture() == hwnd)
+                ReleaseCapture();
+        }
+
+        // ブロックの移動処理
+        g_manager.OnMouseMove(x, y);
+
+        // ドラッグ中だけ再描画
+        if (g_manager.IsDragging())
+        {
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+
+        return 0;
     }
 
     case WM_LBUTTONUP:
@@ -346,6 +372,74 @@ LRESULT CALLBACK BlockListProc(
     );
 }
 
+bool SaveProject(HWND hwnd)
+{
+    wchar_t path[MAX_PATH] = L"";
+
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter =
+        L"Block Editor Files (*.blk)\0*.blk\0"
+        L"All Files (*.*)\0*.*\0";
+    ofn.lpstrFile = path;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrDefExt = L"blk";
+    ofn.Flags =
+        OFN_OVERWRITEPROMPT |
+        OFN_PATHMUSTEXIST;
+
+    if (!GetSaveFileNameW(&ofn))
+        return false;
+
+    return BlockFileManager::SaveToFile(
+        path,
+        g_manager.GetBlocks(),
+        g_manager.GetParents()
+    );
+}
+
+bool LoadProject(HWND hwnd)
+{
+    wchar_t path[MAX_PATH] = L"";
+
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter =
+        L"Block Editor Files (*.blk)\0*.blk\0"
+        L"All Files (*.*)\0*.*\0";
+    ofn.lpstrFile = path;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrDefExt = L"blk";
+    ofn.Flags =
+        OFN_FILEMUSTEXIST |
+        OFN_PATHMUSTEXIST;
+
+    if (!GetOpenFileNameW(&ofn))
+        return false;
+
+    std::vector<Block> loadedBlocks;
+    std::vector<int> loadedParents;
+
+    if (!BlockFileManager::LoadFromFile(
+        path,
+        loadedBlocks,
+        loadedParents))
+    {
+        return false;
+    }
+
+    if (!g_manager.ReplaceBlocks(
+        loadedBlocks,
+        loadedParents))
+    {
+        return false;
+    }
+
+    InvalidateRect(hwnd, nullptr, FALSE);
+    return true;
+}
 
 // メインウィンドウの処理
 LRESULT CALLBACK WndProc(
@@ -437,6 +531,30 @@ LRESULT CALLBACK WndProc(
             nullptr
         );
 
+        CreateWindowW(
+            L"BUTTON",
+            L"保存",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            540, 10, 80, 38,
+            hwnd,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(ID_SAVE)),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
+        CreateWindowW(
+            L"BUTTON",
+            L"読み込み",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            630, 10, 90, 38,
+            hwnd,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(ID_LOAD)),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
         InitializeBlockList(g_blockList);
 
         ShowWindow(g_blockList, SW_HIDE);
@@ -519,6 +637,56 @@ LRESULT CALLBACK WndProc(
 
             UpdateButtonColors();
             SetFocus(hwnd);
+
+            return 0;
+        }
+
+        case ID_SAVE:
+        {
+            if (SaveProject(hwnd))
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"プロジェクトを保存しました。",
+                    L"保存完了",
+                    MB_OK | MB_ICONINFORMATION
+                );
+            }
+            else
+            {
+                // キャンセルと保存失敗を区別する場合は、
+                // 関数の戻り値を別途設計してください。
+                MessageBoxW(
+                    hwnd,
+                    L"保存できませんでした。",
+                    L"保存エラー",
+                    MB_OK | MB_ICONERROR
+                );
+            }
+
+            return 0;
+        }
+
+        case ID_LOAD:
+        {
+            if (LoadProject(hwnd))
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"プロジェクトを読み込みました。",
+                    L"読み込み完了",
+                    MB_OK | MB_ICONINFORMATION
+                );
+            }
+            else
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"読み込みできませんでした。",
+                    L"読み込みエラー",
+                    MB_OK | MB_ICONERROR
+                );
+            }
 
             return 0;
         }
@@ -826,7 +994,7 @@ LRESULT CALLBACK WndProc(
                 g_zoom * 100.0f
             );
 
-            RECT zoomRect = { 550, 10, 700, 48 };
+            RECT zoomRect = { 10, 100, 520, 48 };
 
             SetTextColor(memDC, RGB(70, 70, 70));
 
@@ -859,6 +1027,7 @@ LRESULT CALLBACK WndProc(
         EndPaint(hwnd, &ps);
         return 0;
     }
+
 
     case WM_DESTROY:
     {

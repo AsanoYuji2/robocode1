@@ -391,3 +391,55 @@ bool BlockManager::DeleteBlockAt(int x, int y)
 
     return true;
 }
+
+const std::vector<int>& BlockManager::GetParents() const
+{
+    return parent;
+}
+
+bool BlockManager::ReplaceBlocks(
+    const std::vector<Block>& newBlocks,
+    const std::vector<int>& newParents)
+{
+    if (newBlocks.size() != newParents.size())
+        return false;
+
+    const int count = static_cast<int>(newBlocks.size());
+
+    // Ú‘±æ‚Ì”ÍˆÍ‚ğŒŸØ
+    for (int i = 0; i < count; ++i)
+    {
+        const int p = newParents[i];
+
+        if (p < -1 || p >= count || p == i)
+            return false;
+    }
+
+    // Ú‘±‚ÌzŠÂ‚ğŒŸØ
+    for (int i = 0; i < count; ++i)
+    {
+        int current = i;
+
+        for (int steps = 0; current != -1; ++steps)
+        {
+            if (steps >= count)
+                return false;
+
+            current = newParents[current];
+        }
+    }
+
+    blocks = newBlocks;
+    parent = newParents;
+
+    selected = -1;
+    dragging = false;
+    dragStarted = false;
+
+    return true;
+}
+
+bool BlockManager::IsDragging() const
+{
+    return dragging;
+}
