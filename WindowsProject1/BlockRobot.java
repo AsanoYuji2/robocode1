@@ -1,3 +1,4 @@
+
 import robocode.AdvancedRobot;\n\npublic class BlockRobot extends AdvancedRobot {
     @Override
     public void run() {
