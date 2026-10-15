@@ -7,37 +7,42 @@
 #include <unordered_map>
 
 // ============================================================
+// ブロックの種類の共通定義
+//
+// 新しいブロックを追加するときは、ここに追加する。
+// BlockType とリスト表示用の一覧が自動的に生成される。
+// ============================================================
+
+#define BLOCK_TYPE_LIST(X) \
+    X(Move)                \
+    X(Turn)                \
+    X(TurnLeft)            \
+    X(MoveRight)           \
+    X(MoveLeft)            \
+    X(Fire)                \
+    X(Bark)                \
+    X(Repeat)              \
+    X(EndRepeat)           \
+    X(Wait)                \
+    X(If)                  \
+    X(Else)                \
+    X(EndIf)               \
+    X(CreateVariable)      \
+    X(SetVariable)         \
+    X(ChangeVariable)      \
+    X(AddVariable)         \
+    X(SubtractVariable)    \
+    X(SetBoolean)
+
+// ============================================================
 // ブロックの種類
 // ============================================================
 
 enum class BlockType
 {
-    Move,        // 前進する
-    Turn,        // 右に90°旋回する
-    TurnLeft,    // 左に90°旋回する
-    MoveRight,   // 右方向に移動する
-    MoveLeft,    // 左方向に移動する
-    Fire,        // 弾を発射する
-    Bark,        // 後退する
-
-    Repeat,      // 繰り返し処理の開始
-    EndRepeat,   // 繰り返し処理の終了
-    Wait,        // 指定した秒数だけ待機
-
-    If,          // 条件分岐の開始（条件が真の場合）
-    Else,        // 条件が偽の場合の処理
-    EndIf,       // 条件分岐の終了
-
-    CreateVariable,   // 数値変数を作成する
-    SetVariable,      // 数値変数に値を設定する
-    ChangeVariable,   // 数値変数の値を増減する
-
-    // 算術演算
-    AddVariable,      // 数値変数に値を足す（加算）
-    SubtractVariable, // 数値変数から値を引く（減算）
-
-    // 真偽値の設定
-    SetBoolean        // 真偽値変数に真（true）または偽（false）を設定する
+#define DECLARE_BLOCK_TYPE(name) name,
+    BLOCK_TYPE_LIST(DECLARE_BLOCK_TYPE)
+#undef DECLARE_BLOCK_TYPE
 };
 
 // ============================================================
@@ -132,11 +137,11 @@ struct Block
     ConditionType condition = ConditionType::Always;
     int conditionValue = 50;
 
-    // 変数
+    // 数値変数
     std::wstring variableName = L"score";
     int value = 0;
 
-    // 真偽値の設定
+    // 真偽値
     bool booleanValue = true;
 
     // AND / OR / NOT 用の左側条件
@@ -149,7 +154,7 @@ struct Block
     std::wstring rightVariableName = L"score";
     int rightConditionValue = 0;
 
-    // NOT や複合条件の真偽値変数
+    // 真偽値変数名
     std::wstring booleanVariableName = L"flag";
 };
 
@@ -176,6 +181,15 @@ using RobotBooleanVariables =
 std::unordered_map<std::wstring, bool>;
 
 // ============================================================
+// ブロック種類の一覧取得
+//
+// Block.cpp で BLOCK_TYPE_LIST(X) から生成する。
+// main.cpp では、この関数を使ってリストを作成する。
+// ============================================================
+
+const std::vector<BlockType>& GetAvailableBlockTypes();
+
+// ============================================================
 // ブロック関連
 // ============================================================
 
@@ -193,6 +207,7 @@ void DrawBlock(HDC hdc, const Block& block);
 // ブロック列の実行
 // ============================================================
 
+// 変数を新規作成する実行版
 void ExecuteBlockSequence(
     const std::vector<Block>& blocks,
     const std::function<void(const Block&)>& executeOne,
@@ -220,8 +235,10 @@ void ExecuteBlockSequence(
 // イベント関連
 // ============================================================
 
+// イベント名の取得
 std::wstring GetEventName(RobotEvent event);
 
+// 変数を新規作成するイベント実行版
 void ExecuteEventSequence(
     const EventHandler& handler,
     const std::function<void(const Block&)>& executeOne,
@@ -252,19 +269,23 @@ void ExecuteEventSequence(
 class RobotEventManager
 {
 public:
+    // イベントと変数をすべてクリア
     void Clear();
 
+    // イベントの登録・更新
     void RegisterEvent(
         RobotEvent event,
         const std::vector<Block>& blocks
     );
 
+    // イベント発生時の実行
     void TriggerEvent(
         RobotEvent event,
         const std::function<void(const Block&)>& executeOne,
         const std::function<bool(const Block&)>& conditionCheck
     );
 
+    // 登録済みイベントの取得
     const std::vector<EventHandler>& GetHandlers() const;
 
     // 数値変数
@@ -276,6 +297,7 @@ public:
     const RobotBooleanVariables& GetBooleanVariables() const;
 
 private:
+    // 登録済みイベント
     std::vector<EventHandler> handlers;
 
     // イベント間で共有する変数

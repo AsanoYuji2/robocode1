@@ -1,10 +1,26 @@
-
 #include "Block.h"
 
 #include <algorithm>
 #include <chrono>
 #include <thread>
 #include <limits>
+
+// ============================================================
+// ブロック種類の一覧取得
+// Block.h の BLOCK_TYPE_LIST(X) から自動生成する
+// ============================================================
+
+const std::vector<BlockType>& GetAvailableBlockTypes()
+{
+    static const std::vector<BlockType> types =
+    {
+#define ADD_BLOCK(name) BlockType::name,
+        BLOCK_TYPE_LIST(ADD_BLOCK)
+#undef ADD_BLOCK
+    };
+
+    return types;
+}
 
 // ============================================================
 // ブロックの色
@@ -159,7 +175,6 @@ static std::wstring GetConditionName(
 
     case ConditionType::BooleanVariable:
         return booleanVariableName + L" が真";
-
     }
 
     return L"不明な条件";
@@ -316,8 +331,9 @@ std::wstring GetBlockName(const Block& b)
 
 std::wstring GetBlockName(BlockType type)
 {
-    Block block;
+    Block block{};
     block.type = type;
+
     return GetBlockName(block);
 }
 
@@ -574,10 +590,7 @@ static bool CheckSimpleCondition(
     case ConditionType::FalseValue:
         return false;
 
-        // --------------------------------------------------------
         // 数値変数の比較
-        // --------------------------------------------------------
-
     case ConditionType::VariableAtLeast:
     case ConditionType::VariableAtMost:
     case ConditionType::VariableEqual:
@@ -617,10 +630,7 @@ static bool CheckSimpleCondition(
         }
     }
 
-    // --------------------------------------------------------
     // 真偽値変数
-    // --------------------------------------------------------
-
     case ConditionType::BooleanVariable:
     {
         const auto it =
@@ -632,10 +642,7 @@ static bool CheckSimpleCondition(
         return it->second;
     }
 
-    // --------------------------------------------------------
     // 外部センサーによる条件判定
-    // --------------------------------------------------------
-
     case ConditionType::HealthAtLeast:
     case ConditionType::EnemyDetected:
     case ConditionType::EnemyDistanceAtMost:
@@ -649,7 +656,7 @@ static bool CheckSimpleCondition(
         if (!conditionCheck)
             return false;
 
-        Block temp;
+        Block temp{};
         temp.type = BlockType::If;
         temp.condition = condition;
         temp.variableName = variableName;
@@ -658,7 +665,6 @@ static bool CheckSimpleCondition(
         return conditionCheck(temp);
     }
 
-    // 論理演算は CheckCondition で処理する
     case ConditionType::And:
     case ConditionType::Or:
     case ConditionType::Not:
@@ -680,10 +686,6 @@ static bool CheckCondition(
 {
     switch (block.condition)
     {
-        // --------------------------------------------------------
-        // AND：左右の条件が両方とも真
-        // --------------------------------------------------------
-
     case ConditionType::And:
     {
         const bool left = CheckSimpleCondition(
@@ -711,10 +713,6 @@ static bool CheckCondition(
 
         return left && right;
     }
-
-    // --------------------------------------------------------
-    // OR：左右どちらかが真
-    // --------------------------------------------------------
 
     case ConditionType::Or:
     {
@@ -744,10 +742,6 @@ static bool CheckCondition(
         return left || right;
     }
 
-    // --------------------------------------------------------
-    // NOT：条件の真偽を反転
-    // --------------------------------------------------------
-
     case ConditionType::Not:
     {
         const bool result = CheckSimpleCondition(
@@ -763,10 +757,6 @@ static bool CheckCondition(
         return !result;
     }
 
-    // --------------------------------------------------------
-    // 通常の条件
-    // --------------------------------------------------------
-
     default:
         return CheckSimpleCondition(
             block.condition,
@@ -779,8 +769,6 @@ static bool CheckCondition(
         );
     }
 }
-
-
 
 // ============================================================
 // ブロック列の内部実行
@@ -801,10 +789,7 @@ static void ExecuteRange(
     {
         const Block& block = blocks[i];
 
-        // ----------------------------------------------------
         // 数値変数を作成
-        // ----------------------------------------------------
-
         if (block.type == BlockType::CreateVariable)
         {
             variables.emplace(
@@ -816,10 +801,7 @@ static void ExecuteRange(
             continue;
         }
 
-        // ----------------------------------------------------
         // 数値変数に値を設定
-        // ----------------------------------------------------
-
         if (block.type == BlockType::SetVariable)
         {
             variables[block.variableName] = block.value;
@@ -828,10 +810,7 @@ static void ExecuteRange(
             continue;
         }
 
-        // ----------------------------------------------------
         // 真偽値を設定
-        // ----------------------------------------------------
-
         if (block.type == BlockType::SetBoolean)
         {
             booleanVariables[block.booleanVariableName] =
@@ -841,10 +820,7 @@ static void ExecuteRange(
             continue;
         }
 
-        // ----------------------------------------------------
         // 変数の増減・足し算・引き算
-        // ----------------------------------------------------
-
         if (block.type == BlockType::ChangeVariable ||
             block.type == BlockType::AddVariable ||
             block.type == BlockType::SubtractVariable)
@@ -874,10 +850,7 @@ static void ExecuteRange(
             continue;
         }
 
-        // ----------------------------------------------------
         // Repeat
-        // ----------------------------------------------------
-
         if (block.type == BlockType::Repeat)
         {
             const RepeatParts parts =
@@ -916,10 +889,7 @@ static void ExecuteRange(
             continue;
         }
 
-        // ----------------------------------------------------
         // If
-        // ----------------------------------------------------
-
         if (block.type == BlockType::If)
         {
             const IfParts parts =
@@ -970,10 +940,7 @@ static void ExecuteRange(
             continue;
         }
 
-        // ----------------------------------------------------
         // 構造用ブロック
-        // ----------------------------------------------------
-
         if (block.type == BlockType::Else ||
             block.type == BlockType::EndIf)
         {
@@ -981,16 +948,10 @@ static void ExecuteRange(
             continue;
         }
 
-        // ----------------------------------------------------
         // 通常ブロック
-        // ----------------------------------------------------
-
         executeOne(block);
 
-        // ----------------------------------------------------
         // Wait
-        // ----------------------------------------------------
-
         if (block.type == BlockType::Wait)
         {
             const double seconds = (std::max)(
@@ -1259,7 +1220,3 @@ RobotEventManager::GetBooleanVariables() const
 {
     return booleanVariables;
 }
-
-
-
-

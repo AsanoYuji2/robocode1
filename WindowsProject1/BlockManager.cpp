@@ -16,6 +16,9 @@ void BlockManager::Initialize()
     blocks.clear();
     parent.clear();
 
+    undoStack.clear();
+    redoStack.clear();
+
     blocks.push_back({ BlockType::Move, 100, 120 });
     blocks.push_back({ BlockType::Turn, 100, 220 });
     blocks.push_back({ BlockType::Fire, 100, 320 });
@@ -105,9 +108,41 @@ void BlockManager::DrawAll(HDC hdc) const
 
     SetWorldTransform(hdc, &transform);
 
-    for (const auto& block : blocks)
+    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
     {
+        const Block& block = blocks[i];
+
+        // 通常のブロック描画
         DrawBlock(hdc, block);
+
+        // 選択中のブロックには青い枠を描画
+        if (i == selected)
+        {
+            HPEN pen = CreatePen(
+                PS_SOLID,
+                3,
+                RGB(40, 150, 255)
+            );
+
+            HGDIOBJ oldPen = SelectObject(hdc, pen);
+            HGDIOBJ oldBrush = SelectObject(
+                hdc,
+                GetStockObject(HOLLOW_BRUSH)
+            );
+
+            Rectangle(
+                hdc,
+                block.x - 3,
+                block.y - 3,
+                block.x + block.w + 3,
+                block.y + block.h + 3
+            );
+
+            SelectObject(hdc, oldBrush);
+            SelectObject(hdc, oldPen);
+
+            DeleteObject(pen);
+        }
     }
 
     RestoreDC(hdc, savedDC);
@@ -127,9 +162,9 @@ void BlockManager::OnMouseDown(
         return;
     }
 
-    // 手前のブロックを優先
+    // 手前のブロックから順に判定
     for (int i = static_cast<int>(blocks.size()) - 1;
-         i >= 0; --i)
+        i >= 0; --i)
     {
         if (HitBlock(blocks[i], world.x, world.y))
         {
@@ -148,6 +183,11 @@ void BlockManager::OnMouseDown(
             return;
         }
     }
+
+    // ブロックがない場所をクリックしたら選択解除
+    selected = -1;
+    dragging = false;
+    dragStarted = false;
 }
 
 void BlockManager::OnMouseMove(int x, int y)
@@ -165,6 +205,9 @@ void BlockManager::OnMouseMove(int x, int y)
 
     if (!dragStarted)
     {
+        // ドラッグ開始前の状態を1回だけ保存
+        SaveUndoState();
+
         parent[selected] = -1;
         dragStarted = true;
     }
@@ -184,8 +227,8 @@ void BlockManager::OnMouseUp(HWND hwnd)
 
     dragging = false;
     dragStarted = false;
-    selected = -1;
 
+    // selected は解除しない
     if (GetCapture() == hwnd)
         ReleaseCapture();
 }
@@ -345,6 +388,8 @@ void BlockManager::AddBlock(
     int x,
     int y)
 {
+    SaveUndoState();
+
     blocks.push_back({ type, x, y });
     parent.push_back(-1);
 }
@@ -365,6 +410,8 @@ bool BlockManager::DeleteBlockAt(int x, int y)
 
     if (index < 0)
         return false;
+
+    SaveUndoState();
 
     for (int i = 0;
          i < static_cast<int>(parent.size());
@@ -432,6 +479,9 @@ bool BlockManager::ReplaceBlocks(
     blocks = newBlocks;
     parent = newParents;
 
+    undoStack.clear();
+    redoStack.clear();
+
     selected = -1;
     dragging = false;
     dragStarted = false;
@@ -442,4 +492,163 @@ bool BlockManager::ReplaceBlocks(
 bool BlockManager::IsDragging() const
 {
     return dragging;
+}
+
+int BlockManager::GetSelectedBlockIndex() const
+{
+    return selected;
+}
+
+
+int BlockManager::GetSelectedBlock() const
+{
+    return selected;
+}
+
+void BlockManager::ClearSelection()
+{
+    selected = -1;
+    dragging = false;
+    dragStarted = false;
+}
+
+bool BlockManager::DeleteSelectedBlock()
+{
+    if (selected < 0 ||
+        selected >= static_cast<int>(blocks.size()))
+    {
+        return false;
+    }
+
+    int index = selected;
+
+    SaveUndoState();
+
+    for (int i = 0;
+        i < static_cast<int>(parent.size());
+        ++i)
+    {
+        if (parent[i] == index)
+            parent[i] = -1;
+        else if (parent[i] > index)
+            --parent[i];
+    }
+
+    blocks.erase(blocks.begin() + index);
+    parent.erase(parent.begin() + index);
+
+    ClearSelection();
+    return true;
+}
+
+bool BlockManager::CopySelectedBlock()
+{
+    if (selected < 0 ||
+        selected >= static_cast<int>(blocks.size()))
+    {
+        return false;
+    }
+
+    copiedBlock = blocks[selected];
+    hasCopiedBlock = true;
+
+    return true;
+}
+
+bool BlockManager::PasteCopiedBlock(int x, int y)
+{
+    if (!hasCopiedBlock)
+        return false;
+
+    Block newBlock = copiedBlock;
+
+    newBlock.x = x;
+    newBlock.y = y;
+
+    SaveUndoState();
+
+    blocks.push_back(newBlock);
+    parent.push_back(-1);
+
+    selected = static_cast<int>(blocks.size()) - 1;
+
+    return true;
+}
+
+// --------------------------------------------------------
+// 操作前の状態を履歴に保存
+// --------------------------------------------------------
+void BlockManager::SaveUndoState()
+{
+    BlockState state;
+    state.blocks = blocks;
+    state.parent = parent;
+
+    undoStack.push_back(state);
+
+    // 新しい操作を行ったら、やり直し履歴を消す
+    redoStack.clear();
+
+    // 履歴は最大100件
+    constexpr size_t MAX_HISTORY = 100;
+
+    if (undoStack.size() > MAX_HISTORY)
+    {
+        undoStack.erase(undoStack.begin());
+    }
+}
+
+// --------------------------------------------------------
+// 元に戻す：Ctrl + Z
+// --------------------------------------------------------
+bool BlockManager::Undo()
+{
+    if (undoStack.empty())
+        return false;
+
+    // 現在の状態をやり直し履歴へ保存
+    BlockState current;
+    current.blocks = blocks;
+    current.parent = parent;
+
+    redoStack.push_back(current);
+
+    // 直前の状態を復元
+    BlockState previous = undoStack.back();
+    undoStack.pop_back();
+
+    blocks = previous.blocks;
+    parent = previous.parent;
+
+    // 古い選択インデックスを使わない
+    ClearSelection();
+
+    return true;
+}
+
+// --------------------------------------------------------
+// やり直す：Ctrl + Y
+// --------------------------------------------------------
+bool BlockManager::Redo()
+{
+    if (redoStack.empty())
+        return false;
+
+    // 現在の状態を元に戻す履歴へ保存
+    BlockState current;
+    current.blocks = blocks;
+    current.parent = parent;
+
+    undoStack.push_back(current);
+
+    // やり直し状態を復元
+    BlockState next = redoStack.back();
+    redoStack.pop_back();
+
+    blocks = next.blocks;
+    parent = next.parent;
+
+    ClearSelection();
+
+    return true;
 }

@@ -5,17 +5,51 @@
 #include <string>
 #include <algorithm>
 #include <cwchar>
+#include <vector>
+
+#include <commdlg.h>
 
 #include "BlockManager.h"
 #include "JavaGenerator.h"
-
-#include <commdlg.h>
 #include "BlockFileManager.h"
 
 #pragma comment(lib, "Comdlg32.lib")
 
+// ============================================================
+// グローバル変数
+// ============================================================
 
 BlockManager g_manager;
+
+// リストに表示するブロックの種類
+const BlockType g_blockTypes[] =
+{
+    BlockType::Move,
+    BlockType::Turn,
+    BlockType::TurnLeft,
+    BlockType::MoveRight,
+    BlockType::MoveLeft,
+    BlockType::Fire,
+    BlockType::Bark,
+
+    BlockType::Repeat,
+    BlockType::EndRepeat,
+    BlockType::Wait,
+
+    BlockType::If,
+    BlockType::Else,
+    BlockType::EndIf,
+
+    BlockType::CreateVariable,
+    BlockType::SetVariable,
+    BlockType::ChangeVariable,
+    BlockType::AddVariable,
+    BlockType::SubtractVariable,
+    BlockType::SetBoolean
+};
+
+constexpr int BLOCK_TYPE_COUNT =
+sizeof(g_blockTypes) / sizeof(g_blockTypes[0]);
 
 HWND g_blockList = nullptr;
 HWND g_addButton = nullptr;
@@ -62,7 +96,10 @@ const COLORREF COLOR_ADD_ON = RGB(40, 120, 220);
 const COLORREF COLOR_DELETE_ON = RGB(220, 65, 65);
 
 
-// 座標変換を更新
+// ============================================================
+// 表示位置・ズーム管理
+// ============================================================
+
 void UpdateView()
 {
     g_zoom = (std::max)(
@@ -78,40 +115,15 @@ void UpdateView()
 }
 
 
-// リスト番号からブロック種類を取得
-BlockType GetBlockTypeFromIndex(int index)
-{
-    switch (index)
-    {
-    case 0: return BlockType::Move;
-    case 1: return BlockType::Turn;
-    case 2: return BlockType::TurnLeft;
-    case 3: return BlockType::MoveRight;
-    case 4: return BlockType::MoveLeft;
-    case 5: return BlockType::Fire;
-    case 6: return BlockType::Bark;
-    default: return BlockType::Move;
-    }
-}
+// ============================================================
+// ブロック一覧の初期化
+// ============================================================
 
-
-// ブロック一覧を初期化
 void InitializeBlockList(HWND list)
 {
     SendMessageW(list, LB_RESETCONTENT, 0, 0);
 
-    const BlockType types[] =
-    {
-        BlockType::Move,
-        BlockType::Turn,
-        BlockType::TurnLeft,
-        BlockType::MoveRight,
-        BlockType::MoveLeft,
-        BlockType::Fire,
-        BlockType::Bark
-    };
-
-    for (BlockType type : types)
+    for (BlockType type : g_blockTypes)
     {
         Block block{};
         block.type = type;
@@ -135,28 +147,38 @@ void InitializeBlockList(HWND list)
 }
 
 
-// ボタンを再描画
+// ============================================================
+// ボタンの状態更新
+// ============================================================
+
 void UpdateButtonColors()
 {
     if (g_addButton)
+    {
         RedrawWindow(
             g_addButton,
             nullptr,
             nullptr,
             RDW_INVALIDATE | RDW_UPDATENOW
         );
+    }
 
     if (g_deleteButton)
+    {
         RedrawWindow(
             g_deleteButton,
             nullptr,
             nullptr,
             RDW_INVALIDATE | RDW_UPDATENOW
         );
+    }
 }
 
 
+// ============================================================
 // ボタンの独自描画
+// ============================================================
+
 void DrawCustomButton(
     const DRAWITEMSTRUCT* dis,
     COLORREF color,
@@ -190,7 +212,9 @@ void DrawCustomButton(
     HGDIOBJ oldFont = nullptr;
 
     if (font)
+    {
         oldFont = SelectObject(hdc, font);
+    }
 
     DrawTextW(
         hdc,
@@ -201,11 +225,16 @@ void DrawCustomButton(
     );
 
     if (oldFont)
+    {
         SelectObject(hdc, oldFont);
+    }
 }
 
 
-// 作業エリア内か判定
+// ============================================================
+// 作業エリア判定
+// ============================================================
+
 bool IsCanvasPoint(POINT p)
 {
     RECT client;
@@ -219,7 +248,10 @@ bool IsCanvasPoint(POINT p)
 }
 
 
-// リストからのドラッグ＆ドロップ
+// ============================================================
+// ブロック一覧からのドラッグ＆ドロップ
+// ============================================================
+
 LRESULT CALLBACK BlockListProc(
     HWND hwnd,
     UINT msg,
@@ -255,10 +287,9 @@ LRESULT CALLBACK BlockListProc(
         {
             int index = LOWORD(itemInfo);
 
-            if (index >= 0 && index < 7)
+            if (index >= 0 && index < BLOCK_TYPE_COUNT)
             {
-                g_dragBlockType =
-                    GetBlockTypeFromIndex(index);
+                g_dragBlockType = g_blockTypes[index];
 
                 g_dragStart.x = GET_X_LPARAM(lp);
                 g_dragStart.y = GET_Y_LPARAM(lp);
@@ -277,7 +308,6 @@ LRESULT CALLBACK BlockListProc(
         x = GET_X_LPARAM(lp);
         y = GET_Y_LPARAM(lp);
 
-        // リストからのドラッグ開始判定
         if (GetCapture() == hwnd && (wp & MK_LBUTTON))
         {
             int dx = x - g_dragStart.x;
@@ -306,6 +336,7 @@ LRESULT CALLBACK BlockListProc(
             ScreenToClient(g_mainWindow, &dropPoint);
 
             bool wasDragging = g_draggingFromList;
+
             g_draggingFromList = false;
 
             ReleaseCapture();
@@ -347,8 +378,10 @@ LRESULT CALLBACK BlockListProc(
     }
 
     case WM_CAPTURECHANGED:
+    {
         g_draggingFromList = false;
         break;
+    }
     }
 
     return CallWindowProcW(
@@ -360,6 +393,11 @@ LRESULT CALLBACK BlockListProc(
     );
 }
 
+
+// ============================================================
+// プロジェクト保存
+// ============================================================
+
 bool SaveProject(HWND hwnd)
 {
     wchar_t path[MAX_PATH] = L"";
@@ -367,18 +405,23 @@ bool SaveProject(HWND hwnd)
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
+
     ofn.lpstrFilter =
         L"Block Editor Files (*.blk)\0*.blk\0"
         L"All Files (*.*)\0*.*\0";
+
     ofn.lpstrFile = path;
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrDefExt = L"blk";
+
     ofn.Flags =
         OFN_OVERWRITEPROMPT |
         OFN_PATHMUSTEXIST;
 
     if (!GetSaveFileNameW(&ofn))
+    {
         return false;
+    }
 
     return BlockFileManager::SaveToFile(
         path,
@@ -387,6 +430,11 @@ bool SaveProject(HWND hwnd)
     );
 }
 
+
+// ============================================================
+// プロジェクト読み込み
+// ============================================================
+
 bool LoadProject(HWND hwnd)
 {
     wchar_t path[MAX_PATH] = L"";
@@ -394,18 +442,23 @@ bool LoadProject(HWND hwnd)
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
+
     ofn.lpstrFilter =
         L"Block Editor Files (*.blk)\0*.blk\0"
         L"All Files (*.*)\0*.*\0";
+
     ofn.lpstrFile = path;
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrDefExt = L"blk";
+
     ofn.Flags =
         OFN_FILEMUSTEXIST |
         OFN_PATHMUSTEXIST;
 
     if (!GetOpenFileNameW(&ofn))
+    {
         return false;
+    }
 
     std::vector<Block> loadedBlocks;
     std::vector<int> loadedParents;
@@ -426,10 +479,15 @@ bool LoadProject(HWND hwnd)
     }
 
     InvalidateRect(hwnd, nullptr, FALSE);
+
     return true;
 }
 
-// メインウィンドウの処理
+
+// ============================================================
+// メインウィンドウのイベント処理
+// ============================================================
+
 LRESULT CALLBACK WndProc(
     HWND hwnd,
     UINT msg,
@@ -453,6 +511,9 @@ LRESULT CALLBACK WndProc(
 
     switch (msg)
     {
+        // --------------------------------------------------------
+        // ウィンドウ作成
+        // --------------------------------------------------------
     case WM_CREATE:
     {
         g_mainWindow = hwnd;
@@ -462,89 +523,65 @@ LRESULT CALLBACK WndProc(
 
         // ブロック追加ボタン
         g_addButton = CreateWindowW(
-            L"BUTTON",
-            L"ブロック追加",
+            L"BUTTON", L"ブロック追加",
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
             150, 10, 120, 38,
             hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_ADD)
-                ),
-            GetModuleHandleW(nullptr),
-            nullptr
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_ADD)),
+            GetModuleHandleW(nullptr), nullptr
         );
 
         // ブロック削除ボタン
         g_deleteButton = CreateWindowW(
-            L"BUTTON",
-            L"ブロック削除",
+            L"BUTTON", L"ブロック削除",
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
             280, 10, 120, 38,
             hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_DELETE)
-                ),
-            GetModuleHandleW(nullptr),
-            nullptr
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_DELETE)),
+            GetModuleHandleW(nullptr), nullptr
         );
 
         // ズームリセットボタン
         g_resetViewButton = CreateWindowW(
-            L"BUTTON",
-            L"ズームリセット",
+            L"BUTTON", L"ズームリセット",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             410, 10, 120, 38,
             hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_RESET_VIEW)
-                ),
-            GetModuleHandleW(nullptr),
-            nullptr
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_RESET_VIEW)),
+            GetModuleHandleW(nullptr), nullptr
         );
 
         // ブロック一覧
         g_blockList = CreateWindowW(
-            L"LISTBOX",
-            nullptr,
-            WS_CHILD |
-            LBS_NOTIFY |
-            WS_BORDER |
-            WS_VSCROLL,
+            L"LISTBOX", nullptr,
+            WS_CHILD | LBS_NOTIFY | WS_BORDER | WS_VSCROLL,
             150, 50, 180, 110,
             hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_BLOCK_LIST)
-                ),
-            GetModuleHandleW(nullptr),
-            nullptr
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_BLOCK_LIST)),
+            GetModuleHandleW(nullptr), nullptr
         );
 
+        // 保存ボタン
         CreateWindowW(
-            L"BUTTON",
-            L"保存",
+            L"BUTTON", L"保存",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             540, 10, 80, 38,
             hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_SAVE)),
-            GetModuleHandleW(nullptr),
-            nullptr
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_SAVE)),
+            GetModuleHandleW(nullptr), nullptr
         );
 
+        // 読み込みボタン
         CreateWindowW(
-            L"BUTTON",
-            L"読み込み",
+            L"BUTTON", L"読み込み",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             630, 10, 90, 38,
             hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_LOAD)),
-            GetModuleHandleW(nullptr),
-            nullptr
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_LOAD)),
+            GetModuleHandleW(nullptr), nullptr
         );
 
         InitializeBlockList(g_blockList);
-
         ShowWindow(g_blockList, SW_HIDE);
 
         g_oldListProc = reinterpret_cast<WNDPROC>(
@@ -558,23 +595,148 @@ LRESULT CALLBACK WndProc(
         return 0;
     }
 
+    // --------------------------------------------------------
     // 背景消去を抑制
+    // --------------------------------------------------------
     case WM_ERASEBKGND:
         return 1;
 
-        // 追加・削除ボタンの描画
+        // --------------------------------------------------------
+ // キーボード操作
+ // --------------------------------------------------------
+    case WM_KEYDOWN:
+    {
+        switch (wp)
+        {
+            // Delete：選択したブロックを削除
+        case VK_DELETE:
+        {
+            if (!g_deleteMode)
+            {
+                if (g_manager.DeleteSelectedBlock())
+                {
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+            }
+
+            return 0;
+        }
+
+        // Ctrl + S：保存
+        case 'S':
+        {
+            if (GetKeyState(VK_CONTROL) & 0x8000)
+            {
+                if (SaveProject(hwnd))
+                {
+                    MessageBoxW(
+                        hwnd,
+                        L"プロジェクトを保存しました。",
+                        L"保存完了",
+                        MB_OK | MB_ICONINFORMATION
+                    );
+                }
+                else
+                {
+                    MessageBoxW(
+                        hwnd,
+                        L"保存できませんでした。",
+                        L"保存エラー",
+                        MB_OK | MB_ICONERROR
+                    );
+                }
+
+                return 0;
+            }
+
+            break;
+        }
+
+        // Ctrl + C：選択したブロックをコピー
+        case 'C':
+        {
+            if (GetKeyState(VK_CONTROL) & 0x8000)
+            {
+                if (g_manager.CopySelectedBlock())
+                {
+                    // コピー成功
+                    SetWindowTextW(
+                        hwnd,
+                        L"ブロックエディタ - コピーしました"
+                    );
+                }
+
+                return 0;
+            }
+
+            break;
+        }
+
+        // Ctrl + V：コピーしたブロックを貼り付け
+        case 'V':
+        {
+            if (GetKeyState(VK_CONTROL) & 0x8000)
+            {
+                if (g_manager.PasteCopiedBlock(
+                    160, 250))
+                {
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+
+                return 0;
+            }
+
+            break;
+        }
+
+        // Ctrl + Z：元に戻す
+        case 'Z':
+        {
+            if (GetKeyState(VK_CONTROL) & 0x8000)
+            {
+                if (g_manager.Undo())
+                {
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+
+                return 0;
+            }
+
+            break;
+        }
+
+        // Ctrl + Y：やり直す
+        case 'Y':
+        {
+            if (GetKeyState(VK_CONTROL) & 0x8000)
+            {
+                if (g_manager.Redo())
+                {
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+
+                return 0;
+            }
+
+            break;
+        }
+        }
+
+        break;
+    }
+
+    // --------------------------------------------------------
+    // ボタンの独自描画
+    // --------------------------------------------------------
     case WM_DRAWITEM:
     {
-        auto* dis =
-            reinterpret_cast<DRAWITEMSTRUCT*>(lp);
+        auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
 
         if (dis->CtlID == ID_ADD)
         {
             DrawCustomButton(
                 dis,
-                g_showBlockList
-                ? COLOR_ADD_ON
-                : COLOR_NORMAL,
+                g_showBlockList ? COLOR_ADD_ON : COLOR_NORMAL,
                 L"ブロック追加"
             );
 
@@ -585,9 +747,7 @@ LRESULT CALLBACK WndProc(
         {
             DrawCustomButton(
                 dis,
-                g_deleteMode
-                ? COLOR_DELETE_ON
-                : COLOR_NORMAL,
+                g_deleteMode ? COLOR_DELETE_ON : COLOR_NORMAL,
                 L"ブロック削除"
             );
 
@@ -597,6 +757,9 @@ LRESULT CALLBACK WndProc(
         break;
     }
 
+    // --------------------------------------------------------
+    // ボタン操作
+    // --------------------------------------------------------
     case WM_COMMAND:
     {
         switch (LOWORD(wp))
@@ -629,56 +792,6 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
-        case ID_SAVE:
-        {
-            if (SaveProject(hwnd))
-            {
-                MessageBoxW(
-                    hwnd,
-                    L"プロジェクトを保存しました。",
-                    L"保存完了",
-                    MB_OK | MB_ICONINFORMATION
-                );
-            }
-            else
-            {
-                // キャンセルと保存失敗を区別する場合は、
-                // 関数の戻り値を別途設計してください。
-                MessageBoxW(
-                    hwnd,
-                    L"保存できませんでした。",
-                    L"保存エラー",
-                    MB_OK | MB_ICONERROR
-                );
-            }
-
-            return 0;
-        }
-
-        case ID_LOAD:
-        {
-            if (LoadProject(hwnd))
-            {
-                MessageBoxW(
-                    hwnd,
-                    L"プロジェクトを読み込みました。",
-                    L"読み込み完了",
-                    MB_OK | MB_ICONINFORMATION
-                );
-            }
-            else
-            {
-                MessageBoxW(
-                    hwnd,
-                    L"読み込みできませんでした。",
-                    L"読み込みエラー",
-                    MB_OK | MB_ICONERROR
-                );
-            }
-
-            return 0;
-        }
-
         case ID_DELETE:
         {
             g_deleteMode = !g_deleteMode;
@@ -700,12 +813,62 @@ LRESULT CALLBACK WndProc(
 
         case ID_RESET_VIEW:
         {
-            // ズーム率だけ100%に戻す
-            // 画面位置は変更しない
             g_zoom = INITIAL_ZOOM;
 
             UpdateView();
             InvalidateRect(hwnd, nullptr, FALSE);
+
+            return 0;
+        }
+
+        case ID_SAVE:
+        {
+            if (SaveProject(hwnd))
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"プロジェクトを保存しました。",
+                    L"保存完了",
+                    MB_OK | MB_ICONINFORMATION
+                );
+            }
+            else
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"保存できませんでした。"
+                    L"保存先やファイルへのアクセスを確認してください。",
+                    L"保存エラー",
+                    MB_OK | MB_ICONERROR
+                );
+            }
+
+            return 0;
+        }
+
+        case ID_LOAD:
+        {
+            if (LoadProject(hwnd))
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"プロジェクトを読み込みました。",
+                    L"読み込み完了",
+                    MB_OK | MB_ICONINFORMATION
+                );
+
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            else
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"読み込みできませんでした。"
+                    L"ファイル形式や内容を確認してください。",
+                    L"読み込みエラー",
+                    MB_OK | MB_ICONERROR
+                );
+            }
 
             return 0;
         }
@@ -717,24 +880,20 @@ LRESULT CALLBACK WndProc(
         break;
     }
 
+    // --------------------------------------------------------
     // マウスホイールによるズーム
+    // --------------------------------------------------------
     case WM_MOUSEWHEEL:
     {
-        POINT mouse =
-        {
+        POINT mouse = {
             GET_X_LPARAM(lp),
             GET_Y_LPARAM(lp)
         };
 
         ScreenToClient(hwnd, &mouse);
 
-        if (
-            mouse.x < CANVAS_LEFT ||
-            mouse.y < CANVAS_TOP
-            )
-        {
+        if (mouse.x < CANVAS_LEFT || mouse.y < CANVAS_TOP)
             return 0;
-        }
 
         float oldZoom = g_zoom;
 
@@ -754,11 +913,8 @@ LRESULT CALLBACK WndProc(
         if (oldZoom != g_zoom)
         {
             // マウス位置をズームの中心にする
-            float worldX =
-                (mouse.x - g_viewX) / oldZoom;
-
-            float worldY =
-                (mouse.y - g_viewY) / oldZoom;
+            float worldX = (mouse.x - g_viewX) / oldZoom;
+            float worldY = (mouse.y - g_viewY) / oldZoom;
 
             g_viewX = mouse.x - worldX * g_zoom;
             g_viewY = mouse.y - worldY * g_zoom;
@@ -770,12 +926,13 @@ LRESULT CALLBACK WndProc(
         return 0;
     }
 
+    // --------------------------------------------------------
     // 右クリックで画面移動開始
+    // --------------------------------------------------------
     case WM_RBUTTONDOWN:
     {
         if (x >= CANVAS_LEFT && y >= CANVAS_TOP)
         {
-            // ブロック操作を終了
             g_manager.OnMouseUp(hwnd);
 
             g_panning = true;
@@ -788,7 +945,9 @@ LRESULT CALLBACK WndProc(
         return 0;
     }
 
-    // 右ボタンを離して画面移動終了
+    // --------------------------------------------------------
+    // 右クリックを離して画面移動終了
+    // --------------------------------------------------------
     case WM_RBUTTONUP:
     {
         g_panning = false;
@@ -801,27 +960,23 @@ LRESULT CALLBACK WndProc(
         return 0;
     }
 
-    // 左クリック・左ドラッグ
+    // --------------------------------------------------------
+    // 左クリック
+    // --------------------------------------------------------
     case WM_LBUTTONDOWN:
     {
         if (x >= CANVAS_LEFT && y >= CANVAS_TOP)
         {
             if (g_deleteMode)
             {
-                // 削除モード
-                POINT world =
-                    g_manager.ScreenToWorld(x, y);
+                POINT world = g_manager.ScreenToWorld(x, y);
 
-                g_manager.DeleteBlockAt(
-                    world.x,
-                    world.y
-                );
+                g_manager.DeleteBlockAt(world.x, world.y);
 
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
             else
             {
-                // 通常のブロック操作
                 g_manager.OnMouseDown(hwnd, x, y);
             }
         }
@@ -830,7 +985,6 @@ LRESULT CALLBACK WndProc(
             y >= 10 && y <= 48
             )
         {
-            // Java出力
             if (ExportJava(g_manager.GetBlocks()))
             {
                 MessageBoxW(
@@ -852,10 +1006,13 @@ LRESULT CALLBACK WndProc(
         }
 
         InvalidateRect(hwnd, nullptr, FALSE);
+
         return 0;
     }
 
-    // マウス移動・右ドラッグによる画面移動
+    // --------------------------------------------------------
+    // マウス移動・右ドラッグ
+    // --------------------------------------------------------
     case WM_MOUSEMOVE:
     {
         if (g_panning && (wp & MK_RBUTTON))
@@ -884,36 +1041,44 @@ LRESULT CALLBACK WndProc(
                 ReleaseCapture();
         }
 
-        // 右ドラッグ中以外はブロック操作
         g_manager.OnMouseMove(x, y);
 
         if (g_manager.IsDragging())
         {
             InvalidateRect(hwnd, nullptr, FALSE);
         }
+
         return 0;
     }
 
+    // --------------------------------------------------------
     // 左ボタンを離す
+    // --------------------------------------------------------
     case WM_LBUTTONUP:
     {
         g_manager.OnMouseUp(hwnd);
+
         InvalidateRect(hwnd, nullptr, FALSE);
 
         return 0;
     }
 
-    // マウスキャプチャが外れた場合
+    // --------------------------------------------------------
+    // マウスキャプチャ変更
+    // --------------------------------------------------------
     case WM_CAPTURECHANGED:
     {
         g_panning = false;
         break;
     }
 
+    // --------------------------------------------------------
     // ダブルバッファ描画
+    // --------------------------------------------------------
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
+
         HDC hdc = BeginPaint(hwnd, &ps);
 
         RECT client;
@@ -926,100 +1091,106 @@ LRESULT CALLBACK WndProc(
         {
             HDC memDC = CreateCompatibleDC(hdc);
 
-            HBITMAP bitmap =
-                CreateCompatibleBitmap(hdc, width, height);
-
-            HGDIOBJ oldBitmap =
-                SelectObject(memDC, bitmap);
-
-            FillRect(
-                memDC,
-                &client,
-                (HBRUSH)GetStockObject(WHITE_BRUSH)
+            HBITMAP bitmap = CreateCompatibleBitmap(
+                hdc, width, height
             );
 
-            // Java出力ボタン
-            RECT javaButton = { 10, 10, 140, 48 };
+            if (memDC && bitmap)
+            {
+                HGDIOBJ oldBitmap = SelectObject(memDC, bitmap);
 
-            HBRUSH javaBrush =
-                CreateSolidBrush(RGB(45, 45, 55));
+                // 背景
+                FillRect(
+                    memDC,
+                    &client,
+                    (HBRUSH)GetStockObject(WHITE_BRUSH)
+                );
 
-            FillRect(memDC, &javaButton, javaBrush);
-            DeleteObject(javaBrush);
+                // Java出力ボタン
+                RECT javaButton = { 10, 10, 140, 48 };
 
-            SetBkMode(memDC, TRANSPARENT);
-            SetTextColor(memDC, RGB(255, 255, 255));
+                HBRUSH javaBrush = CreateSolidBrush(
+                    RGB(45, 45, 55)
+                );
 
-            DrawTextW(
-                memDC,
-                L"Java output",
-                -1,
-                &javaButton,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE
-            );
+                FillRect(memDC, &javaButton, javaBrush);
+                DeleteObject(javaBrush);
 
-            // 作業エリア境界線
-            HPEN pen = CreatePen(
-                PS_SOLID,
-                1,
-                RGB(220, 220, 220)
-            );
+                SetBkMode(memDC, TRANSPARENT);
+                SetTextColor(memDC, RGB(255, 255, 255));
 
-            HGDIOBJ oldPen = SelectObject(memDC, pen);
+                DrawTextW(
+                    memDC,
+                    L"Java output",
+                    -1,
+                    &javaButton,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE
+                );
 
-            MoveToEx(memDC, CANVAS_LEFT, 0, nullptr);
-            LineTo(memDC, CANVAS_LEFT, height);
+                // 作業エリア境界線
+                HPEN pen = CreatePen(
+                    PS_SOLID, 1, RGB(220, 220, 220)
+                );
 
-            SelectObject(memDC, oldPen);
-            DeleteObject(pen);
+                HGDIOBJ oldPen = SelectObject(memDC, pen);
 
-            // ブロック描画
-            g_manager.DrawAll(memDC);
+                MoveToEx(memDC, CANVAS_LEFT, 0, nullptr);
+                LineTo(memDC, CANVAS_LEFT, height);
 
-            // ズーム表示
-            wchar_t zoomText[64];
+                SelectObject(memDC, oldPen);
+                DeleteObject(pen);
 
-            swprintf_s(
-                zoomText,
-                L"Zoom: %.0f%%",
-                g_zoom * 100.0f
-            );
+                // ブロック描画
+                g_manager.DrawAll(memDC);
 
-            RECT zoomRect = { 10, 100, 520, 48 };
+                // ズーム表示
+                wchar_t zoomText[64];
 
-            SetTextColor(memDC, RGB(70, 70, 70));
+                swprintf_s(
+                    zoomText,
+                    L"Zoom: %.0f%%",
+                    g_zoom * 100.0f
+                );
 
-            DrawTextW(
-                memDC,
-                zoomText,
-                -1,
-                &zoomRect,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE
-            );
+                RECT zoomRect = { 10, 100, 520, 130 };
 
-            // 一括転送
-            BitBlt(
-                hdc,
-                0,
-                0,
-                width,
-                height,
-                memDC,
-                0,
-                0,
-                SRCCOPY
-            );
+                SetTextColor(memDC, RGB(70, 70, 70));
 
-            SelectObject(memDC, oldBitmap);
-            DeleteObject(bitmap);
-            DeleteDC(memDC);
+                DrawTextW(
+                    memDC,
+                    zoomText,
+                    -1,
+                    &zoomRect,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE
+                );
+
+                // バッファを画面へ転送
+                BitBlt(
+                    hdc,
+                    0, 0, width, height,
+                    memDC,
+                    0, 0,
+                    SRCCOPY
+                );
+
+                SelectObject(memDC, oldBitmap);
+            }
+
+            if (bitmap)
+                DeleteObject(bitmap);
+
+            if (memDC)
+                DeleteDC(memDC);
         }
 
         EndPaint(hwnd, &ps);
+
         return 0;
     }
 
-
+    // --------------------------------------------------------
+    // ウィンドウ終了
+    // --------------------------------------------------------
     case WM_DESTROY:
     {
         if (g_blockList && g_oldListProc)
@@ -1032,33 +1203,48 @@ LRESULT CALLBACK WndProc(
         }
 
         PostQuitMessage(0);
+
         return 0;
     }
     }
 
-    return DefWindowProcW(hwnd, msg, wp, lp);
+    return DefWindowProcW(
+        hwnd,
+        msg,
+        wp,
+        lp
+    );
 }
 
 
+// ============================================================
 // アプリケーション開始
+// ============================================================
+
 int WINAPI wWinMain(
     HINSTANCE instance,
     HINSTANCE,
     PWSTR,
     int show)
 {
-    const wchar_t CLASS_NAME[] = L"MyBlockEditor";
+    const wchar_t CLASS_NAME[] =
+        L"MyBlockEditor";
 
-    WNDCLASSW wc = {};
+    WNDCLASSW wc{};
 
     wc.lpfnWndProc = WndProc;
     wc.hInstance = instance;
     wc.lpszClassName = CLASS_NAME;
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hCursor = LoadCursorW(
+        nullptr,
+        IDC_ARROW
+    );
     wc.hbrBackground = nullptr;
 
     if (!RegisterClassW(&wc))
+    {
         return 0;
+    }
 
     HWND hwnd = CreateWindowExW(
         0,
@@ -1076,14 +1262,20 @@ int WINAPI wWinMain(
     );
 
     if (!hwnd)
+    {
         return 0;
+    }
 
     ShowWindow(hwnd, show);
     UpdateWindow(hwnd);
 
-    MSG msg = {};
+    MSG msg{};
 
-    while (GetMessageW(&msg, nullptr, 0, 0) > 0)
+    while (GetMessageW(
+        &msg,
+        nullptr,
+        0,
+        0) > 0)
     {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);

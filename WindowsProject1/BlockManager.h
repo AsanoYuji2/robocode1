@@ -41,6 +41,25 @@ public:
 
     bool IsDragging() const;
 
+    // 選択中のブロック
+    int GetSelectedBlockIndex() const;
+
+    // 選択中のブロックを削除
+    bool DeleteSelectedBlock();
+
+    // 選択中のブロックを解除
+    void ClearSelection();
+
+    // 選択中ブロックの操作
+    bool CopySelectedBlock();
+    bool PasteCopiedBlock(int x, int y);
+
+    // 選択状態の取得・解除
+    int GetSelectedBlock() const;
+
+    // 元に戻す・やり直す
+    bool Undo();
+    bool Redo();
 private:
     std::vector<Block> blocks;
     std::vector<int> parent;
@@ -65,4 +84,24 @@ private:
     bool IsDescendant(int blockIndex, int ancestorIndex) const;
     bool HasChild(int blockIndex) const;
     int GetChild(int blockIndex) const;
+
+    // コピーしたブロック
+    Block copiedBlock;
+    bool hasCopiedBlock = false;
+
+    // 操作履歴の1状態
+    struct BlockState
+    {
+        std::vector<Block> blocks;
+        std::vector<int> parent;
+    };
+
+    // 元に戻す履歴
+    std::vector<BlockState> undoStack;
+
+    // やり直す履歴
+    std::vector<BlockState> redoStack;
+
+    // 操作前の状態を保存
+    void SaveUndoState();
 };
