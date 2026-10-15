@@ -1,9 +1,10 @@
+
 #include "Block.h"
 
 #include <algorithm>
 #include <chrono>
 #include <thread>
-#include <unordered_map>
+#include <limits>
 
 // ============================================================
 // ブロックの色
@@ -35,6 +36,9 @@ COLORREF GetBlockColor(BlockType type)
     case BlockType::Repeat:
         return RGB(220, 80, 120);
 
+    case BlockType::EndRepeat:
+        return RGB(180, 60, 100);
+
     case BlockType::Wait:
         return RGB(220, 154, 40);
 
@@ -55,9 +59,110 @@ COLORREF GetBlockColor(BlockType type)
 
     case BlockType::ChangeVariable:
         return RGB(230, 130, 60);
+
+    case BlockType::AddVariable:
+        return RGB(30, 170, 100);
+
+    case BlockType::SubtractVariable:
+        return RGB(210, 100, 50);
+
+    case BlockType::SetBoolean:
+        return RGB(120, 90, 190);
     }
 
     return RGB(100, 100, 100);
+}
+
+// ============================================================
+// 条件名
+// ============================================================
+
+static std::wstring GetConditionName(
+    ConditionType condition,
+    const std::wstring& variableName,
+    int value,
+    const std::wstring& booleanVariableName = L"flag")
+{
+    switch (condition)
+    {
+    case ConditionType::Always:
+        return L"常に真";
+
+    case ConditionType::HealthAtLeast:
+        return L"体力 >= " + std::to_wstring(value);
+
+    case ConditionType::VariableAtLeast:
+        return variableName + L" >= " +
+            std::to_wstring(value);
+
+    case ConditionType::VariableAtMost:
+        return variableName + L" <= " +
+            std::to_wstring(value);
+
+    case ConditionType::VariableEqual:
+        return variableName + L" == " +
+            std::to_wstring(value);
+
+    case ConditionType::VariableNotEqual:
+        return variableName + L" != " +
+            std::to_wstring(value);
+
+    case ConditionType::VariableGreaterThan:
+        return variableName + L" > " +
+            std::to_wstring(value);
+
+    case ConditionType::VariableLessThan:
+        return variableName + L" < " +
+            std::to_wstring(value);
+
+    case ConditionType::EnemyDetected:
+        return L"敵を発見";
+
+    case ConditionType::EnemyDistanceAtMost:
+        return L"敵との距離 <= " +
+            std::to_wstring(value);
+
+    case ConditionType::EnemyOnLeft:
+        return L"敵が左側";
+
+    case ConditionType::EnemyOnRight:
+        return L"敵が右側";
+
+    case ConditionType::EnemyAhead:
+        return L"敵が前方";
+
+    case ConditionType::EnemyBehind:
+        return L"敵が後方";
+
+    case ConditionType::WallNear:
+        return L"壁との距離 <= " +
+            std::to_wstring(value);
+
+    case ConditionType::EnergyAtMost:
+        return L"エネルギー <= " +
+            std::to_wstring(value);
+
+    case ConditionType::And:
+        return L"AND（かつ）";
+
+    case ConditionType::Or:
+        return L"OR（または）";
+
+    case ConditionType::Not:
+        return L"NOT（反転）";
+
+    case ConditionType::TrueValue:
+        return L"真（TRUE）";
+
+    case ConditionType::FalseValue:
+        return L"偽（FALSE）";
+
+    case ConditionType::BooleanVariable:
+        return booleanVariableName + L" が真";
+
+    }
+
+    return L"不明な条件";
 }
 
 // ============================================================
@@ -97,6 +202,9 @@ std::wstring GetBlockName(const Block& b)
         return L"繰り返す " +
             std::to_wstring(b.repeatCount) + L"回";
 
+    case BlockType::EndRepeat:
+        return L"繰り返しここまで";
+
     case BlockType::Wait:
         return L"指定秒数待つ " +
             std::to_wstring(b.waitSeconds) + L"秒";
@@ -104,38 +212,55 @@ std::wstring GetBlockName(const Block& b)
     case BlockType::If:
         switch (b.condition)
         {
-        case ConditionType::HealthAtLeast:
-            return L"もし体力が " +
-                std::to_wstring(b.conditionValue) +
-                L"以上なら";
+        case ConditionType::And:
+            return L"もし (" +
+                GetConditionName(
+                    b.leftCondition,
+                    b.leftVariableName,
+                    b.leftConditionValue,
+                    b.booleanVariableName
+                ) +
+                L") AND (" +
+                GetConditionName(
+                    b.rightCondition,
+                    b.rightVariableName,
+                    b.rightConditionValue,
+                    b.booleanVariableName
+                ) + L")";
 
-        case ConditionType::VariableAtLeast:
-            return L"もし " + b.variableName +
-                L" が " +
-                std::to_wstring(b.conditionValue) +
-                L"以上なら";
+        case ConditionType::Or:
+            return L"もし (" +
+                GetConditionName(
+                    b.leftCondition,
+                    b.leftVariableName,
+                    b.leftConditionValue,
+                    b.booleanVariableName
+                ) +
+                L") OR (" +
+                GetConditionName(
+                    b.rightCondition,
+                    b.rightVariableName,
+                    b.rightConditionValue,
+                    b.booleanVariableName
+                ) + L")";
 
-        case ConditionType::VariableAtMost:
-            return L"もし " + b.variableName +
-                L" が " +
-                std::to_wstring(b.conditionValue) +
-                L"以下なら";
+        case ConditionType::Not:
+            return L"もし NOT (" +
+                GetConditionName(
+                    b.leftCondition,
+                    b.leftVariableName,
+                    b.leftConditionValue,
+                    b.booleanVariableName
+                ) + L")";
 
-        case ConditionType::VariableEqual:
-            return L"もし " + b.variableName +
-                L" が " +
-                std::to_wstring(b.conditionValue) +
-                L"なら";
-
-        case ConditionType::VariableNotEqual:
-            return L"もし " + b.variableName +
-                L" が " +
-                std::to_wstring(b.conditionValue) +
-                L"以外なら";
-
-        case ConditionType::Always:
         default:
-            return L"もし条件を満たしていたら";
+            return L"もし " +
+                GetConditionName(
+                    b.condition,
+                    b.variableName,
+                    b.conditionValue,
+                    b.booleanVariableName
+                ) + L" なら";
         }
 
     case BlockType::Else:
@@ -161,29 +286,43 @@ std::wstring GetBlockName(const Block& b)
                 std::to_wstring(b.value) +
                 L" 増やす";
         }
-        else
-        {
-            return b.variableName + L" を " +
-                std::to_wstring(-static_cast<long long>(b.value)) +
-                L" 減らす";
-        }
+
+        return b.variableName + L" を " +
+            std::to_wstring(
+                -static_cast<long long>(b.value)
+            ) + L" 減らす";
+
+    case BlockType::AddVariable:
+        return b.variableName + L" に " +
+            std::to_wstring(b.value) + L" を足す";
+
+    case BlockType::SubtractVariable:
+        return b.variableName + L" から " +
+            std::to_wstring(b.value) + L" を引く";
+
+    case BlockType::SetBoolean:
+        return b.booleanVariableName +
+            (b.booleanValue
+                ? L" = 真（TRUE）"
+                : L" = 偽（FALSE）");
     }
 
     return L"不明";
 }
 
+// ============================================================
+// ブロック名：種類だけで取得
+// ============================================================
 
 std::wstring GetBlockName(BlockType type)
 {
     Block block;
     block.type = type;
-
     return GetBlockName(block);
 }
 
-
 // ============================================================
-// ブロックの当たり判定
+// 当たり判定
 // ============================================================
 
 bool HitBlock(const Block& b, int x, int y)
@@ -196,24 +335,33 @@ bool HitBlock(const Block& b, int x, int y)
 }
 
 // ============================================================
-// ブロックの描画
+// ブロック描画
 // ============================================================
 
 void DrawBlock(HDC hdc, const Block& b)
 {
+    if (!hdc)
+        return;
+
     const int tabH = 8;
 
     HBRUSH brush =
         CreateSolidBrush(GetBlockColor(b.type));
 
-    HBRUSH oldBrush =
-        (HBRUSH)SelectObject(hdc, brush);
+    if (!brush)
+        return;
 
     HPEN pen =
         CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
 
-    HPEN oldPen =
-        (HPEN)SelectObject(hdc, pen);
+    if (!pen)
+    {
+        DeleteObject(brush);
+        return;
+    }
+
+    HGDIOBJ oldBrush = SelectObject(hdc, brush);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
 
     Rectangle(
         hdc,
@@ -265,7 +413,8 @@ void DrawBlock(HDC hdc, const Block& b)
         name.c_str(),
         -1,
         &textRect,
-        DT_LEFT | DT_VCENTER | DT_SINGLELINE
+        DT_LEFT | DT_VCENTER |
+        DT_SINGLELINE | DT_END_ELLIPSIS
     );
 
     SelectObject(hdc, oldPen);
@@ -276,7 +425,7 @@ void DrawBlock(HDC hdc, const Block& b)
 }
 
 // ============================================================
-// If / Else / EndIf の範囲検索
+// If / Else / EndIf の対応位置
 // ============================================================
 
 struct IfParts
@@ -291,7 +440,6 @@ static IfParts FindIfParts(
     size_t end)
 {
     int depth = 0;
-
     IfParts result = { end, end };
 
     for (size_t i = begin; i < end; ++i)
@@ -302,17 +450,17 @@ static IfParts FindIfParts(
         }
         else if (blocks[i].type == BlockType::EndIf)
         {
-            --depth;
-
             if (depth == 0)
             {
                 result.endIfIndex = i;
                 return result;
             }
+
+            --depth;
         }
         else if (
             blocks[i].type == BlockType::Else &&
-            depth == 1)
+            depth == 0)
         {
             if (result.elseIndex == end)
                 result.elseIndex = i;
@@ -323,70 +471,319 @@ static IfParts FindIfParts(
 }
 
 // ============================================================
-// 条件判定
+// Repeat / EndRepeat の対応位置
 // ============================================================
 
-using VariableMap =
-std::unordered_map<std::wstring, int>;
+struct RepeatParts
+{
+    size_t endIndex;
+};
 
-static bool CheckCondition(
-    const Block& block,
-    const VariableMap& variables,
+static RepeatParts FindRepeatParts(
+    const std::vector<Block>& blocks,
+    size_t begin,
+    size_t end)
+{
+    int depth = 1;
+
+    for (size_t i = begin; i < end; ++i)
+    {
+        if (blocks[i].type == BlockType::Repeat)
+        {
+            ++depth;
+        }
+        else if (blocks[i].type == BlockType::EndRepeat)
+        {
+            --depth;
+
+            if (depth == 0)
+                return { i };
+        }
+    }
+
+    return { end };
+}
+
+// ============================================================
+// 整数の安全な加算
+// ============================================================
+
+static int SafeAddInt(int current, int amount)
+{
+    const long long result =
+        static_cast<long long>(current) +
+        static_cast<long long>(amount);
+
+    const long long minimum =
+        (std::numeric_limits<int>::min)();
+
+    const long long maximum =
+        (std::numeric_limits<int>::max)();
+
+    return static_cast<int>(
+        (std::max)(
+            minimum,
+            (std::min)(maximum, result)
+            )
+        );
+}
+
+// ============================================================
+// 整数の安全な減算
+// ============================================================
+
+static int SafeSubtractInt(int current, int amount)
+{
+    const long long result =
+        static_cast<long long>(current) -
+        static_cast<long long>(amount);
+
+    const long long minimum =
+        (std::numeric_limits<int>::min)();
+
+    const long long maximum =
+        (std::numeric_limits<int>::max)();
+
+    return static_cast<int>(
+        (std::max)(
+            minimum,
+            (std::min)(maximum, result)
+            )
+        );
+}
+
+// ============================================================
+// 基本条件の判定
+// ============================================================
+
+static bool CheckSimpleCondition(
+    ConditionType condition,
+    const std::wstring& variableName,
+    int conditionValue,
+    const std::wstring& booleanVariableName,
+    const RobotVariables& variables,
+    const RobotBooleanVariables& booleanVariables,
     const std::function<bool(const Block&)>& conditionCheck)
 {
-    switch (block.condition)
+    switch (condition)
     {
     case ConditionType::Always:
+    case ConditionType::TrueValue:
         return true;
 
-    case ConditionType::HealthAtLeast:
-        // 体力はゲーム側のコールバックで判定
-        if (conditionCheck)
-            return conditionCheck(block);
-
+    case ConditionType::FalseValue:
         return false;
+
+        // --------------------------------------------------------
+        // 数値変数の比較
+        // --------------------------------------------------------
 
     case ConditionType::VariableAtLeast:
     case ConditionType::VariableAtMost:
     case ConditionType::VariableEqual:
     case ConditionType::VariableNotEqual:
+    case ConditionType::VariableGreaterThan:
+    case ConditionType::VariableLessThan:
     {
-        const auto it = variables.find(block.variableName);
+        const auto it = variables.find(variableName);
 
-        // 存在しない変数は条件不成立
         if (it == variables.end())
             return false;
 
-        const int currentValue = it->second;
-        const int targetValue = block.conditionValue;
+        const int current = it->second;
 
-        switch (block.condition)
+        switch (condition)
         {
         case ConditionType::VariableAtLeast:
-            return currentValue >= targetValue;
+            return current >= conditionValue;
 
         case ConditionType::VariableAtMost:
-            return currentValue <= targetValue;
+            return current <= conditionValue;
 
         case ConditionType::VariableEqual:
-            return currentValue == targetValue;
+            return current == conditionValue;
 
         case ConditionType::VariableNotEqual:
-            return currentValue != targetValue;
+            return current != conditionValue;
 
+        case ConditionType::VariableGreaterThan:
+            return current > conditionValue;
 
+        case ConditionType::VariableLessThan:
+            return current < conditionValue;
 
         default:
             return false;
         }
     }
+
+    // --------------------------------------------------------
+    // 真偽値変数
+    // --------------------------------------------------------
+
+    case ConditionType::BooleanVariable:
+    {
+        const auto it =
+            booleanVariables.find(booleanVariableName);
+
+        if (it == booleanVariables.end())
+            return false;
+
+        return it->second;
+    }
+
+    // --------------------------------------------------------
+    // 外部センサーによる条件判定
+    // --------------------------------------------------------
+
+    case ConditionType::HealthAtLeast:
+    case ConditionType::EnemyDetected:
+    case ConditionType::EnemyDistanceAtMost:
+    case ConditionType::EnemyOnLeft:
+    case ConditionType::EnemyOnRight:
+    case ConditionType::EnemyAhead:
+    case ConditionType::EnemyBehind:
+    case ConditionType::WallNear:
+    case ConditionType::EnergyAtMost:
+    {
+        if (!conditionCheck)
+            return false;
+
+        Block temp;
+        temp.type = BlockType::If;
+        temp.condition = condition;
+        temp.variableName = variableName;
+        temp.conditionValue = conditionValue;
+
+        return conditionCheck(temp);
+    }
+
+    // 論理演算は CheckCondition で処理する
+    case ConditionType::And:
+    case ConditionType::Or:
+    case ConditionType::Not:
+        return false;
     }
 
     return false;
 }
 
 // ============================================================
-// ブロック列の実行
+// 条件判定：AND / OR / NOT
+// ============================================================
+
+static bool CheckCondition(
+    const Block& block,
+    const RobotVariables& variables,
+    const RobotBooleanVariables& booleanVariables,
+    const std::function<bool(const Block&)>& conditionCheck)
+{
+    switch (block.condition)
+    {
+        // --------------------------------------------------------
+        // AND：左右の条件が両方とも真
+        // --------------------------------------------------------
+
+    case ConditionType::And:
+    {
+        const bool left = CheckSimpleCondition(
+            block.leftCondition,
+            block.leftVariableName,
+            block.leftConditionValue,
+            block.booleanVariableName,
+            variables,
+            booleanVariables,
+            conditionCheck
+        );
+
+        if (!left)
+            return false;
+
+        const bool right = CheckSimpleCondition(
+            block.rightCondition,
+            block.rightVariableName,
+            block.rightConditionValue,
+            block.booleanVariableName,
+            variables,
+            booleanVariables,
+            conditionCheck
+        );
+
+        return left && right;
+    }
+
+    // --------------------------------------------------------
+    // OR：左右どちらかが真
+    // --------------------------------------------------------
+
+    case ConditionType::Or:
+    {
+        const bool left = CheckSimpleCondition(
+            block.leftCondition,
+            block.leftVariableName,
+            block.leftConditionValue,
+            block.booleanVariableName,
+            variables,
+            booleanVariables,
+            conditionCheck
+        );
+
+        if (left)
+            return true;
+
+        const bool right = CheckSimpleCondition(
+            block.rightCondition,
+            block.rightVariableName,
+            block.rightConditionValue,
+            block.booleanVariableName,
+            variables,
+            booleanVariables,
+            conditionCheck
+        );
+
+        return left || right;
+    }
+
+    // --------------------------------------------------------
+    // NOT：条件の真偽を反転
+    // --------------------------------------------------------
+
+    case ConditionType::Not:
+    {
+        const bool result = CheckSimpleCondition(
+            block.leftCondition,
+            block.leftVariableName,
+            block.leftConditionValue,
+            block.booleanVariableName,
+            variables,
+            booleanVariables,
+            conditionCheck
+        );
+
+        return !result;
+    }
+
+    // --------------------------------------------------------
+    // 通常の条件
+    // --------------------------------------------------------
+
+    default:
+        return CheckSimpleCondition(
+            block.condition,
+            block.variableName,
+            block.conditionValue,
+            block.booleanVariableName,
+            variables,
+            booleanVariables,
+            conditionCheck
+        );
+    }
+}
+
+
+
+// ============================================================
+// ブロック列の内部実行
 // ============================================================
 
 static void ExecuteRange(
@@ -395,7 +792,8 @@ static void ExecuteRange(
     size_t end,
     const std::function<void(const Block&)>& executeOne,
     const std::function<bool(const Block&)>& conditionCheck,
-    VariableMap& variables)
+    RobotVariables& variables,
+    RobotBooleanVariables& booleanVariables)
 {
     size_t i = begin;
 
@@ -404,20 +802,22 @@ static void ExecuteRange(
         const Block& block = blocks[i];
 
         // ----------------------------------------------------
-        // 変数をつくる
+        // 数値変数を作成
         // ----------------------------------------------------
 
         if (block.type == BlockType::CreateVariable)
         {
-            // 同名の変数がある場合は初期値で上書き
-            variables[block.variableName] = block.value;
+            variables.emplace(
+                block.variableName,
+                block.value
+            );
 
             ++i;
             continue;
         }
 
         // ----------------------------------------------------
-        // 変数に値を設定する
+        // 数値変数に値を設定
         // ----------------------------------------------------
 
         if (block.type == BlockType::SetVariable)
@@ -429,33 +829,46 @@ static void ExecuteRange(
         }
 
         // ----------------------------------------------------
-        // 変数の値を増減する
-        // 正の値なら加算、負の値なら減算
+        // 真偽値を設定
         // ----------------------------------------------------
 
-        if (block.type == BlockType::ChangeVariable)
+        if (block.type == BlockType::SetBoolean)
         {
-            int& variable =
-                variables[block.variableName];
+            booleanVariables[block.booleanVariableName] =
+                block.booleanValue;
 
-            // 符号付き整数のオーバーフローを防止
-            const long long result =
-                static_cast<long long>(variable) +
-                static_cast<long long>(block.value);
+            ++i;
+            continue;
+        }
 
-            variable = static_cast<int>(
-                (std::max)(
-                    static_cast<long long>(
-                        (std::numeric_limits<int>::min)()
-                        ),
-                    (std::min)(
-                        static_cast<long long>(
-                            (std::numeric_limits<int>::max)()
-                            ),
-                        result
-                        )
-                    )
-                );
+        // ----------------------------------------------------
+        // 変数の増減・足し算・引き算
+        // ----------------------------------------------------
+
+        if (block.type == BlockType::ChangeVariable ||
+            block.type == BlockType::AddVariable ||
+            block.type == BlockType::SubtractVariable)
+        {
+            auto it = variables.find(block.variableName);
+
+            // 未作成の数値変数は変更しない
+            if (it != variables.end())
+            {
+                if (block.type == BlockType::SubtractVariable)
+                {
+                    it->second = SafeSubtractInt(
+                        it->second,
+                        block.value
+                    );
+                }
+                else
+                {
+                    it->second = SafeAddInt(
+                        it->second,
+                        block.value
+                    );
+                }
+            }
 
             ++i;
             continue;
@@ -463,11 +876,17 @@ static void ExecuteRange(
 
         // ----------------------------------------------------
         // Repeat
-        // 現在の仕様ではRepeat以降の範囲全体を繰り返す
         // ----------------------------------------------------
 
         if (block.type == BlockType::Repeat)
         {
+            const RepeatParts parts =
+                FindRepeatParts(blocks, i + 1, end);
+
+            // EndRepeat がなければ中断
+            if (parts.endIndex == end)
+                return;
+
             const int count = (std::max)(
                 0,
                 (std::min)(block.repeatCount, 1000)
@@ -478,41 +897,51 @@ static void ExecuteRange(
                 ExecuteRange(
                     blocks,
                     i + 1,
-                    end,
+                    parts.endIndex,
                     executeOne,
                     conditionCheck,
-                    variables
+                    variables,
+                    booleanVariables
                 );
             }
 
-            return;
+            i = parts.endIndex + 1;
+            continue;
+        }
+
+        // 単独の EndRepeat は無視
+        if (block.type == BlockType::EndRepeat)
+        {
+            ++i;
+            continue;
         }
 
         // ----------------------------------------------------
-        // If / Else / EndIf
+        // If
         // ----------------------------------------------------
 
         if (block.type == BlockType::If)
         {
             const IfParts parts =
-                FindIfParts(blocks, i, end);
+                FindIfParts(blocks, i + 1, end);
 
+            // EndIf がなければ中断
             if (parts.endIfIndex == end)
                 return;
 
-            const bool conditionMet =
-                CheckCondition(
-                    block,
-                    variables,
-                    conditionCheck
-                );
+            const bool met = CheckCondition(
+                block,
+                variables,
+                booleanVariables,
+                conditionCheck
+            );
 
-            if (conditionMet)
+            if (met)
             {
-                size_t trueEnd = parts.endIfIndex;
-
-                if (parts.elseIndex != end)
-                    trueEnd = parts.elseIndex;
+                const size_t trueEnd =
+                    parts.elseIndex != end
+                    ? parts.elseIndex
+                    : parts.endIfIndex;
 
                 ExecuteRange(
                     blocks,
@@ -520,7 +949,8 @@ static void ExecuteRange(
                     trueEnd,
                     executeOne,
                     conditionCheck,
-                    variables
+                    variables,
+                    booleanVariables
                 );
             }
             else if (parts.elseIndex != end)
@@ -531,7 +961,8 @@ static void ExecuteRange(
                     parts.endIfIndex,
                     executeOne,
                     conditionCheck,
-                    variables
+                    variables,
+                    booleanVariables
                 );
             }
 
@@ -539,7 +970,10 @@ static void ExecuteRange(
             continue;
         }
 
-        // 構造用ブロック自体は実行しない
+        // ----------------------------------------------------
+        // 構造用ブロック
+        // ----------------------------------------------------
+
         if (block.type == BlockType::Else ||
             block.type == BlockType::EndIf)
         {
@@ -564,9 +998,12 @@ static void ExecuteRange(
                 (std::min)(block.waitSeconds, 3600.0)
                 );
 
-            std::this_thread::sleep_for(
-                std::chrono::duration<double>(seconds)
-            );
+            if (seconds > 0.0)
+            {
+                std::this_thread::sleep_for(
+                    std::chrono::duration<double>(seconds)
+                );
+            }
         }
 
         ++i;
@@ -574,7 +1011,7 @@ static void ExecuteRange(
 }
 
 // ============================================================
-// 外部公開関数
+// ブロック列の実行：変数を新規作成
 // ============================================================
 
 void ExecuteBlockSequence(
@@ -582,11 +1019,52 @@ void ExecuteBlockSequence(
     const std::function<void(const Block&)>& executeOne,
     const std::function<bool(const Block&)>& conditionCheck)
 {
+    RobotVariables variables;
+    RobotBooleanVariables booleanVariables;
+
+    ExecuteBlockSequence(
+        blocks,
+        executeOne,
+        conditionCheck,
+        variables,
+        booleanVariables
+    );
+}
+
+// ============================================================
+// ブロック列の実行：数値変数を共有
+// ============================================================
+
+void ExecuteBlockSequence(
+    const std::vector<Block>& blocks,
+    const std::function<void(const Block&)>& executeOne,
+    const std::function<bool(const Block&)>& conditionCheck,
+    RobotVariables& variables)
+{
+    RobotBooleanVariables booleanVariables;
+
+    ExecuteBlockSequence(
+        blocks,
+        executeOne,
+        conditionCheck,
+        variables,
+        booleanVariables
+    );
+}
+
+// ============================================================
+// ブロック列の実行：数値変数と真偽値変数を共有
+// ============================================================
+
+void ExecuteBlockSequence(
+    const std::vector<Block>& blocks,
+    const std::function<void(const Block&)>& executeOne,
+    const std::function<bool(const Block&)>& conditionCheck,
+    RobotVariables& variables,
+    RobotBooleanVariables& booleanVariables)
+{
     if (!executeOne)
         return;
-
-    // 変数は実行ごとに新しく作る
-    VariableMap variables;
 
     ExecuteRange(
         blocks,
@@ -594,6 +1072,194 @@ void ExecuteBlockSequence(
         blocks.size(),
         executeOne,
         conditionCheck,
+        variables,
+        booleanVariables
+    );
+}
+
+// ============================================================
+// イベント名
+// ============================================================
+
+std::wstring GetEventName(RobotEvent event)
+{
+    switch (event)
+    {
+    case RobotEvent::Start:
+        return L"ロボットの実行開始";
+
+    case RobotEvent::EnemyDetected:
+        return L"敵を発見したとき";
+
+    case RobotEvent::Damaged:
+        return L"被弾したとき";
+
+    case RobotEvent::Hit:
+        return L"命中したとき";
+
+    case RobotEvent::Collision:
+        return L"衝突したとき";
+    }
+
+    return L"不明なイベント";
+}
+
+// ============================================================
+// イベントの実行：変数を新規作成
+// ============================================================
+
+void ExecuteEventSequence(
+    const EventHandler& handler,
+    const std::function<void(const Block&)>& executeOne,
+    const std::function<bool(const Block&)>& conditionCheck)
+{
+    ExecuteBlockSequence(
+        handler.blocks,
+        executeOne,
+        conditionCheck
+    );
+}
+
+// ============================================================
+// イベントの実行：数値変数を共有
+// ============================================================
+
+void ExecuteEventSequence(
+    const EventHandler& handler,
+    const std::function<void(const Block&)>& executeOne,
+    const std::function<bool(const Block&)>& conditionCheck,
+    RobotVariables& variables)
+{
+    ExecuteBlockSequence(
+        handler.blocks,
+        executeOne,
+        conditionCheck,
         variables
     );
 }
+
+// ============================================================
+// イベントの実行：数値変数と真偽値変数を共有
+// ============================================================
+
+void ExecuteEventSequence(
+    const EventHandler& handler,
+    const std::function<void(const Block&)>& executeOne,
+    const std::function<bool(const Block&)>& conditionCheck,
+    RobotVariables& variables,
+    RobotBooleanVariables& booleanVariables)
+{
+    ExecuteBlockSequence(
+        handler.blocks,
+        executeOne,
+        conditionCheck,
+        variables,
+        booleanVariables
+    );
+}
+
+// ============================================================
+// イベント登録のクリア
+// ============================================================
+
+void RobotEventManager::Clear()
+{
+    handlers.clear();
+    variables.clear();
+    booleanVariables.clear();
+}
+
+// ============================================================
+// イベントの登録・更新
+// ============================================================
+
+void RobotEventManager::RegisterEvent(
+    RobotEvent event,
+    const std::vector<Block>& blocks)
+{
+    for (auto& handler : handlers)
+    {
+        if (handler.event == event)
+        {
+            handler.blocks = blocks;
+            return;
+        }
+    }
+
+    EventHandler handler;
+    handler.event = event;
+    handler.blocks = blocks;
+
+    handlers.push_back(handler);
+}
+
+// ============================================================
+// イベント発生
+// ============================================================
+
+void RobotEventManager::TriggerEvent(
+    RobotEvent event,
+    const std::function<void(const Block&)>& executeOne,
+    const std::function<bool(const Block&)>& conditionCheck)
+{
+    if (!executeOne)
+        return;
+
+    for (const auto& handler : handlers)
+    {
+        if (handler.event == event)
+        {
+            ExecuteEventSequence(
+                handler,
+                executeOne,
+                conditionCheck,
+                variables,
+                booleanVariables
+            );
+        }
+    }
+}
+
+// ============================================================
+// 登録済みイベントの取得
+// ============================================================
+
+const std::vector<EventHandler>&
+RobotEventManager::GetHandlers() const
+{
+    return handlers;
+}
+
+// ============================================================
+// 共有する数値変数の取得
+// ============================================================
+
+RobotVariables& RobotEventManager::GetVariables()
+{
+    return variables;
+}
+
+const RobotVariables& RobotEventManager::GetVariables() const
+{
+    return variables;
+}
+
+// ============================================================
+// 共有する真偽値変数の取得
+// ============================================================
+
+RobotBooleanVariables&
+RobotEventManager::GetBooleanVariables()
+{
+    return booleanVariables;
+}
+
+const RobotBooleanVariables&
+RobotEventManager::GetBooleanVariables() const
+{
+    return booleanVariables;
+}
+
+
+
+
