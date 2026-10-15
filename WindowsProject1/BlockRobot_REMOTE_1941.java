@@ -1,0 +1,1 @@
+import robocode.AdvancedRobot;\n\npublic class BlockRobot extends AdvancedRobot {\n    @Override\n    public void run() {\n        setAhead(100);\n        execute();\n        setTurnRight(90);\n        execute();\n        setFire(2);\n        execute();\n    }\n}\n

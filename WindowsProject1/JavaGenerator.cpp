@@ -36,6 +36,8 @@ std::wstring SelectSavePath()
 
 bool ExportJava(const std::vector<Block>& blocks)
 {
+    MessageBoxA(nullptr, "ExportJava called!", "Debug", MB_OK);
+
     std::wstring savePath = SelectSavePath();
 
     if (savePath.empty())
@@ -47,8 +49,10 @@ bool ExportJava(const std::vector<Block>& blocks)
         path.parent_path()
     );
 
-    std::string className =
-        path.stem().string();
+    std::string packageName = path.parent_path().filename().string();
+    std::string className = path.stem().string();
+
+    MessageBoxA(nullptr, "3. Class & Package obtained!", "Debug", MB_OK);
 
     std::vector<Block> ordered = blocks;
 
@@ -64,8 +68,22 @@ bool ExportJava(const std::vector<Block>& blocks)
         }
     );
 
-    std::string code =
-        "import robocode.AdvancedRobot;\n\n"
+    std::string code = "";
+
+    // 1. パッケージ宣言
+    if (!packageName.empty() && packageName != "robots")
+    {
+        code += "package " + packageName + ";\n\n";
+    }
+
+    // 2. インポート文（必ずクラス定義の前に置く）
+    code +=
+        "import robocode.*;\n"
+        "import java.awt.Color;\n"
+        "import static robocode.util.Utils.normalRelativeAngleDegrees;\n\n";
+
+    // 3. クラス定義
+    code +=
         "public class " + className +
         " extends AdvancedRobot\n{\n"
         "    @Override\n"
@@ -131,20 +149,42 @@ bool ExportJava(const std::vector<Block>& blocks)
         "    }\n"
         "}\n";
 
-    std::ofstream file(path.string(), std::ios::binary);
-
+    std::ofstream file(path.string(), std::ios::binary | std::ios::trunc);
     if (!file.is_open())
+    {
+        MessageBoxA(nullptr, "Error: Failed to open file for writing!", "Debug", MB_OK);
         return false;
-
+    }
     file << code;
     file.close();
 
+    MessageBoxA(nullptr, "4. Java file written successfully!", "Debug", MB_OK);
+
+    // コンパイル用バッチファイルの作成と実行
     const std::string root = "C:\\robocode";
     std::string javac = "C:\\インターン\\jdk-17.0.7+7\\bin\\javac.exe";
-    std::string log = root + "\\javac_log.txt";
-    std::string cmd = "cmd /c \"\"" + javac + "\" -encoding UTF-8 -cp \"" +
-        root + "\\libs\\robocode.jar\" \"" + path.string() +"\"\"";
+    std::string logPath = root + "\\javac_log.txt";
+    std::string batPath = root + "\\compile_temp.bat";
 
-    int result = std::system(cmd.c_str());
-    return result == 0; 
+    {
+        std::ofstream bat(batPath);
+        bat << "@echo off\n";
+        bat << "\"" << javac << "\" -encoding UTF-8 -d \"" << root << "\\robots\" -cp \"" << root << "\\libs\\robocode.jar\" \"" << path.string() << "\" > \"" << logPath << "\" 2>&1\n";
+        bat << "exit\n"; // ← ここに exit を追加して自動終了させます
+    }
+
+    MessageBoxA(nullptr, "5. Running javac via batch...", "Debug", MB_OK);
+
+    int result = std::system(batPath.c_str());
+
+    // ログファイルを読み込んでポップアップ表示
+    std::ifstream logFile(logPath);
+    std::string output((std::istreambuf_iterator<char>(logFile)), std::istreambuf_iterator<char>());
+    if (output.empty()) {
+        output = (result == 0) ? "Compile finished successfully!" : "Compilation failed with unknown error.";
+    }
+
+    MessageBoxA(nullptr, output.c_str(), "javac Result", MB_OK);
+
+    return (result == 0);
 }
