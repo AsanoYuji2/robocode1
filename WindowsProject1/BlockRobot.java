@@ -1,11 +1,18 @@
-import robocode.AdvancedRobot;\n\npublic class BlockRobot extends AdvancedRobot {
+import robocode.AdvancedRobot;
+
+public class BlockRobot extends AdvancedRobot
+{
     @Override
-    public void run() {
-        setAhead(100);
-        execute();
-        setTurnRight(90);
-        execute();
-        setFire(2);
-        execute();
+    public void run()
+    {
+        while(true)
+        {
+            setAhead(100);
+            execute();
+            setTurnRight(90);
+            execute();
+            fire(2);
+            execute();
+        }
     }
 }
