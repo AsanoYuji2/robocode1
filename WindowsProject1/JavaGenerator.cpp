@@ -43,14 +43,33 @@ bool ExportJava(const std::vector<Block>& blocks)
     if (savePath.empty())
         return false;
 
-    std::filesystem::path path(savePath);
+    // 1. 入力されたパスを filesystem::path に変換
+    std::filesystem::path inputPath(savePath);
 
-    std::filesystem::create_directories(
-        path.parent_path()
-    );
+    // クラス名（ファイル名から拡張子を除いたもの）を取得
+    std::string className = inputPath.stem().string();
 
-    std::string packageName = path.parent_path().filename().string();
-    std::string className = path.stem().string();
+    // 2. フォルダ名（親フォルダ名）をパッケージ名として動的に取得する
+    std::string packageName = inputPath.parent_path().filename().string();
+
+    // 3. 保存先の基準ディレクトリ
+    std::filesystem::path rootRobots = "C:\\robocode\\robots";
+
+    // パッケージ名が空、または "robots" の直接下を指定された場合の調整
+    std::filesystem::path targetDir;
+    if (packageName.empty() || packageName == "robots") {
+        packageName = "";
+        targetDir = rootRobots;
+    }
+    else {
+        targetDir = rootRobots / packageName;
+    }
+
+    // フォルダがなければ作成
+    std::filesystem::create_directories(targetDir);
+
+    // 4. 最終的なJavaファイルのパス
+    std::filesystem::path finalJavaPath = targetDir / (className + ".java");
 
     MessageBoxA(nullptr, "3. Class & Package obtained!", "Debug", MB_OK);
 
@@ -70,19 +89,19 @@ bool ExportJava(const std::vector<Block>& blocks)
 
     std::string code = "";
 
-    // 1. パッケージ宣言
-    if (!packageName.empty() && packageName != "robots")
+    // パッケージ名がある場合のみパッケージ宣言を付与する
+    if (!packageName.empty())
     {
         code += "package " + packageName + ";\n\n";
     }
 
-    // 2. インポート文（必ずクラス定義の前に置く）
+    // インポート文
     code +=
         "import robocode.*;\n"
         "import java.awt.Color;\n"
         "import static robocode.util.Utils.normalRelativeAngleDegrees;\n\n";
 
-    // 3. クラス定義
+    // クラス定義
     code +=
         "public class " + className +
         " extends AdvancedRobot\n{\n"
@@ -149,7 +168,8 @@ bool ExportJava(const std::vector<Block>& blocks)
         "    }\n"
         "}\n";
 
-    std::ofstream file(path.string(), std::ios::binary | std::ios::trunc);
+    // 5. 正しい finalJavaPath に向かってファイルを書き込む
+    std::ofstream file(finalJavaPath.string(), std::ios::binary | std::ios::trunc);
     if (!file.is_open())
     {
         MessageBoxA(nullptr, "Error: Failed to open file for writing!", "Debug", MB_OK);
@@ -169,15 +189,15 @@ bool ExportJava(const std::vector<Block>& blocks)
     {
         std::ofstream bat(batPath);
         bat << "@echo off\n";
-        bat << "\"" << javac << "\" -encoding UTF-8 -d \"" << root << "\\robots\" -cp \"" << root << "\\libs\\robocode.jar\" \"" << path.string() << "\" > \"" << logPath << "\" 2>&1\n";
-        bat << "exit\n"; // ← ここに exit を追加して自動終了させます
+        // -source 8 -target 8 と -d オプションで robots フォルダを基準に自動配置
+        bat << "\"" << javac << "\" -encoding UTF-8 -source 8 -target 8 -d \"" << root << "\\robots\" -cp \"" << root << "\\libs\\robocode.jar\" \"" << finalJavaPath.string() << "\" > \"" << logPath << "\" 2>&1\n";
+        bat << "exit\n";
     }
 
     MessageBoxA(nullptr, "5. Running javac via batch...", "Debug", MB_OK);
 
     int result = std::system(batPath.c_str());
 
-    // ログファイルを読み込んでポップアップ表示
     std::ifstream logFile(logPath);
     std::string output((std::istreambuf_iterator<char>(logFile)), std::istreambuf_iterator<char>());
     if (output.empty()) {
