@@ -36,7 +36,7 @@ std::wstring SelectSavePath()
 
 bool ExportJava(const std::vector<Block>& blocks)
 {
-    MessageBoxA(nullptr, "ExportJava called!", "Debug", MB_OK);
+    //MessageBoxA(nullptr, "ExportJava called!", "Debug", MB_OK);
 
     std::wstring savePath = SelectSavePath();
 
@@ -71,7 +71,7 @@ bool ExportJava(const std::vector<Block>& blocks)
     // 4. 最終的なJavaファイルのパス
     std::filesystem::path finalJavaPath = targetDir / (className + ".java");
 
-    MessageBoxA(nullptr, "3. Class & Package obtained!", "Debug", MB_OK);
+   // MessageBoxA(nullptr, "3. Class & Package obtained!", "Debug", MB_OK);
 
     std::vector<Block> ordered = blocks;
 
@@ -189,13 +189,19 @@ bool ExportJava(const std::vector<Block>& blocks)
     {
         std::ofstream bat(batPath);
         bat << "@echo off\n";
-        // -source 8 -target 8 と -d オプションで robots フォルダを基準に自動配置
+        // 1. コンパイルを実行
         bat << "\"" << javac << "\" -encoding UTF-8 -source 8 -target 8 -d \"" << root << "\\robots\" -cp \"" << root << "\\libs\\robocode.jar\" \"" << finalJavaPath.string() << "\" > \"" << logPath << "\" 2>&1\n";
+
+        // 2. 確実に作業ディレクトリを移動してRobocodeを起動する
+        bat << "cd /d \"" << root << "\"\n";
+        bat << "call robocode.bat\n"; 
+
         bat << "exit\n";
     }
 
-    MessageBoxA(nullptr, "5. Running javac via batch...", "Debug", MB_OK);
+    //MessageBoxA(nullptr, "5. Running javac & Robocode via batch...", "Debug", MB_OK);
 
+    // バッチを実行
     int result = std::system(batPath.c_str());
 
     std::ifstream logFile(logPath);
