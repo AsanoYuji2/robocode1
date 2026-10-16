@@ -421,118 +421,16 @@ bool IsCanvasPoint(POINT p)
 // ブロック一覧からドラッグ＆ドロップ
 // ============================================================
 
+
 LRESULT CALLBACK BlockListProc(
     HWND hwnd,
     UINT msg,
     WPARAM wp,
     LPARAM lp)
 {
-    switch (msg)
+    // 元のリストボックスの処理を呼び出す
+    if (g_oldListProc)
     {
-    case WM_LBUTTONDOWN:
-    {
-        LRESULT result = CallWindowProcW(
-            g_oldListProc,
-            hwnd,
-            msg,
-            wp,
-            lp
-        );
-
-        LRESULT itemInfo = SendMessageW(
-            hwnd,
-            LB_ITEMFROMPOINT,
-            0,
-            MAKELPARAM(
-                GET_X_LPARAM(lp),
-                GET_Y_LPARAM(lp)
-            )
-        );
-
-        // リスト内の項目をクリックしたか確認
-        if (HIWORD(itemInfo) == 0)
-        {
-            int index = LOWORD(itemInfo);
-
-            if (index >= 0 &&
-                index < static_cast<int>(
-                    g_visibleBlockTypes.size()))
-            {
-                g_dragBlockType =
-                    GetBlockTypeFromIndex(index);
-
-                g_dragStart.x = GET_X_LPARAM(lp);
-                g_dragStart.y = GET_Y_LPARAM(lp);
-
-                g_draggingFromList = false;
-
-                SetCapture(hwnd);
-            }
-        }
-
-        return result;
-    }
-
-    case WM_MOUSEMOVE:
-    {
-        int x = GET_X_LPARAM(lp);
-        int y = GET_Y_LPARAM(lp);
-
-        // 一定距離以上動いたらドラッグと判定
-        if (GetCapture() == hwnd &&
-            (wp & MK_LBUTTON))
-        {
-            int dx = x - g_dragStart.x;
-            int dy = y - g_dragStart.y;
-
-            if (dx * dx + dy * dy >= 16)
-            {
-                g_draggingFromList = true;
-            }
-        }
-
-        return 0;
-    }
-
-    case WM_LBUTTONUP:
-    {
-        if (GetCapture() != hwnd)
-            break;
-
-        POINT dropPoint =
-        {
-            GET_X_LPARAM(lp),
-            GET_Y_LPARAM(lp)
-        };
-
-        // リスト座標からメインウィンドウ座標へ変換
-        ClientToScreen(hwnd, &dropPoint);
-        ScreenToClient(g_mainWindow, &dropPoint);
-
-        bool wasDragging = g_draggingFromList;
-        g_draggingFromList = false;
-
-        ReleaseCapture();
-
-        // 作業エリアにドロップした場合だけ追加
-        if (wasDragging &&
-            !g_deleteMode &&
-            IsCanvasPoint(dropPoint))
-        {
-            POINT world = g_manager.ScreenToWorld(
-                dropPoint.x,
-                dropPoint.y
-            );
-
-            g_manager.AddBlock(
-                g_dragBlockType,
-                world.x - 90,
-                world.y - 27
-            );
-
-            InvalidateEditor();
-        }
-
         return CallWindowProcW(
             g_oldListProc,
             hwnd,
@@ -542,19 +440,15 @@ LRESULT CALLBACK BlockListProc(
         );
     }
 
-    case WM_CAPTURECHANGED:
-        g_draggingFromList = false;
-        break;
-    }
-
-    return CallWindowProcW(
-        g_oldListProc,
+    return DefWindowProcW(
         hwnd,
         msg,
         wp,
         lp
     );
 }
+
+
 
 // ============================================================
 // カテゴリボタンを作成
@@ -797,7 +691,7 @@ LRESULT CALLBACK WndProc(
 
         InitializeBlockList(g_blockList);
 
-        // リストからキャンバスへドラッグできるようにする
+        // リストからキャンバスへドラッグ
         g_oldListProc = reinterpret_cast<WNDPROC>(
             SetWindowLongPtrW(
                 g_blockList,
@@ -819,7 +713,7 @@ LRESULT CALLBACK WndProc(
             nullptr
         );
 
-        // ブロック削除モード
+        // 削除モード
         g_deleteButton = CreateWindowW(
             L"BUTTON",
             L"削除モード",
@@ -958,6 +852,79 @@ LRESULT CALLBACK WndProc(
     }
 
     // ========================================================
+    // キーボードショートカット
+    // ========================================================
+
+    case WM_KEYDOWN:
+    {
+        // Deleteキー
+        if (wParam == VK_DELETE)
+        {
+            if (g_manager.DeleteSelectedBlock())
+                InvalidateEditor();
+
+            return 0;
+        }
+
+        bool ctrlPressed =
+            (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+
+        if (ctrlPressed)
+        {
+            switch (wParam)
+            {
+            case 'A':
+                g_manager.SelectAllBlocks();
+                InvalidateEditor();
+                return 0;
+
+            case 'S':
+                SaveProject(hwnd);
+                return 0;
+
+            case 'O':
+                LoadProject(hwnd);
+                InvalidateEditor();
+                return 0;
+
+            case 'Z':
+                if (g_manager.Undo())
+                    InvalidateEditor();
+                return 0;
+
+            case 'Y':
+                if (g_manager.Redo())
+                    InvalidateEditor();
+                return 0;
+
+            case 'C':
+                g_manager.CopySelectedBlock();
+                return 0;
+
+            case 'V':
+            {
+                const auto& blocks = g_manager.GetBlocks();
+                int index = g_manager.GetSelectedBlockIndex();
+
+                if (index >= 0 &&
+                    index < static_cast<int>(blocks.size()))
+                {
+                    int x = blocks[index].x + 30;
+                    int y = blocks[index].y + 30;
+
+                    if (g_manager.PasteCopiedBlock(x, y))
+                        InvalidateEditor();
+                }
+
+                return 0;
+            }
+            }
+        }
+
+        break;
+    }
+
+    // ========================================================
     // ボタンクリック
     // ========================================================
 
@@ -998,29 +965,32 @@ LRESULT CALLBACK WndProc(
                         center.y
                     );
 
-                g_manager.AddBlock(
-                    GetBlockTypeFromIndex(
-                        SendMessageW(
-                            g_blockList,
-                            LB_GETCURSEL,
-                            0,
-                            0
-                        ) == LB_ERR
-                        ? 0
-                        : static_cast<int>(
-                            SendMessageW(
-                                g_blockList,
-                                LB_GETCURSEL,
-                                0,
-                                0
-                            )
-                            )
-                    ),
-                    world.x,
-                    world.y
+                LRESULT selectedIndex = SendMessageW(
+                    g_blockList,
+                    LB_GETCURSEL,
+                    0,
+                    0
                 );
 
-                InvalidateEditor();
+                int index = selectedIndex == LB_ERR
+                    ? 0
+                    : static_cast<int>(selectedIndex);
+
+                if (!g_visibleBlockTypes.empty())
+                {
+                    if (index >= 0 &&
+                        index < static_cast<int>(
+                            g_visibleBlockTypes.size()))
+                    {
+                        g_manager.AddBlock(
+                            GetBlockTypeFromIndex(index),
+                            world.x,
+                            world.y
+                        );
+
+                        InvalidateEditor();
+                    }
+                }
             }
             return 0;
 
@@ -1050,12 +1020,7 @@ LRESULT CALLBACK WndProc(
 
         case ID_SAVE:
             if (notification == BN_CLICKED)
-            {
-                if (!SaveProject(hwnd))
-                {
-                    // キャンセル時は何もしない
-                }
-            }
+                SaveProject(hwnd);
             return 0;
 
         case ID_LOAD:
@@ -1084,6 +1049,7 @@ LRESULT CALLBACK WndProc(
         ScreenToClient(hwnd, &mouse);
 
         float oldZoom = g_zoom;
+
         float factor =
             GET_WHEEL_DELTA_WPARAM(wParam) > 0
             ? 1.1f
@@ -1091,13 +1057,11 @@ LRESULT CALLBACK WndProc(
 
         float newZoom = oldZoom * factor;
 
-        if (newZoom < MIN_ZOOM)
-            newZoom = MIN_ZOOM;
+        newZoom = (std::max)(
+            MIN_ZOOM,
+            (std::min)(newZoom, MAX_ZOOM)
+            );
 
-        if (newZoom > MAX_ZOOM)
-            newZoom = MAX_ZOOM;
-
-        // マウス位置を基準にズームする
         float worldX = (mouse.x - g_viewX) / oldZoom;
         float worldY = (mouse.y - g_viewY) / oldZoom;
 
@@ -1112,7 +1076,7 @@ LRESULT CALLBACK WndProc(
     }
 
     // ========================================================
-    // 右クリック押下：キャンバス移動開始
+    // 右クリック：キャンバス移動
     // ========================================================
 
     case WM_RBUTTONDOWN:
@@ -1134,16 +1098,21 @@ LRESULT CALLBACK WndProc(
     }
 
     case WM_RBUTTONUP:
+    {
         if (g_panning)
         {
             g_panning = false;
-            ReleaseCapture();
-        }
-        return 0;
 
-        // ========================================================
-        // マウス移動
-        // ========================================================
+            if (GetCapture() == hwnd)
+                ReleaseCapture();
+        }
+
+        return 0;
+    }
+
+    // ========================================================
+    // マウス移動
+    // ========================================================
 
     case WM_MOUSEMOVE:
     {
@@ -1152,6 +1121,7 @@ LRESULT CALLBACK WndProc(
             GET_Y_LPARAM(lParam)
         };
 
+        // キャンバス移動
         if (g_panning)
         {
             g_viewX += p.x - g_lastPanPoint.x;
@@ -1165,9 +1135,28 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
+        // 左ボタンを押している間
         if (wParam & MK_LBUTTON)
         {
-            g_manager.OnMouseMove(p.x, p.y);
+            if (g_manager.IsSelectingRange())
+            {
+                // 範囲選択はワールド座標で更新
+                POINT world = g_manager.ScreenToWorld(
+                    p.x,
+                    p.y
+                );
+
+                g_manager.UpdateRangeSelection(
+                    world.x,
+                    world.y
+                );
+            }
+            else
+            {
+                // 通常のブロック移動
+                g_manager.OnMouseMove(p.x, p.y);
+            }
+
             InvalidateEditor();
         }
 
@@ -1175,8 +1164,9 @@ LRESULT CALLBACK WndProc(
     }
 
     // ========================================================
-    // 左クリック：ブロック操作
+    // 左クリック：ブロック操作・範囲選択
     // ========================================================
+
 
     case WM_LBUTTONDOWN:
     {
@@ -1196,43 +1186,114 @@ LRESULT CALLBACK WndProc(
         if (!IsCanvasPoint(p))
             return 0;
 
+        POINT world = g_manager.ScreenToWorld(p.x, p.y);
+
+        const auto& blocks = g_manager.GetBlocks();
+        bool hitBlock = false;
+
+        // 手前のブロックから判定する
+        for (int i = static_cast<int>(blocks.size()) - 1;
+            i >= 0; --i)
+        {
+            const Block& block = blocks[i];
+
+            if (world.x >= block.x &&
+                world.x < block.x + block.w &&
+                world.y >= block.y &&
+                world.y < block.y + block.h)
+            {
+                hitBlock = true;
+                break;
+            }
+        }
+
+        // 削除モードでは、クリックしたブロックを削除
         if (g_deleteMode)
         {
-            POINT world = g_manager.ScreenToWorld(p.x, p.y);
+            if (hitBlock)
+            {
+                g_manager.DeleteBlockAt(world.x, world.y);
+                InvalidateEditor();
+            }
 
-            g_manager.DeleteBlockAt(
+            return 0;
+        }
+
+        // 空白からドラッグしたら範囲選択
+        if (!hitBlock)
+        {
+            g_manager.StartRangeSelection(world.x, world.y);
+
+            SetCapture(hwnd);
+            InvalidateEditor();
+
+            return 0;
+        }
+
+        // ブロックをクリックしたら通常の選択・移動
+        g_manager.OnMouseDown(hwnd, p.x, p.y);
+
+        SetCapture(hwnd);
+        InvalidateEditor();
+
+        return 0;
+    }
+
+
+    // ========================================================
+    // 左ボタンを離す：ドラッグ・範囲選択終了
+    // ========================================================
+
+    case WM_LBUTTONUP:
+    {
+        if (g_manager.IsSelectingRange())
+        {
+            POINT p = {
+                GET_X_LPARAM(lParam),
+                GET_Y_LPARAM(lParam)
+            };
+
+            POINT world = g_manager.ScreenToWorld(
+                p.x,
+                p.y
+            );
+
+            // 最終位置を反映
+            g_manager.UpdateRangeSelection(
                 world.x,
                 world.y
             );
 
-            InvalidateEditor();
-            return 0;
+            g_manager.EndRangeSelection();
         }
-
-        g_manager.OnMouseDown(hwnd, p.x, p.y);
-        SetCapture(hwnd);
-
-        InvalidateEditor();
-        return 0;
-    }
-
-    case WM_LBUTTONUP:
-        g_manager.OnMouseUp(hwnd);
+        else
+        {
+            g_manager.OnMouseUp(hwnd);
+        }
 
         if (GetCapture() == hwnd)
             ReleaseCapture();
 
         InvalidateEditor();
+
         return 0;
+    }
+
+    // ========================================================
+    // マウス捕捉の変更
+    // ========================================================
 
     case WM_CAPTURECHANGED:
+    {
         g_panning = false;
         g_draggingFromList = false;
-        return 0;
 
-        // ========================================================
-        // 画面描画
-        // ========================================================
+        return 0;
+    }
+
+    // ========================================================
+    // 画面描画
+    // ========================================================
 
     case WM_PAINT:
     {
@@ -1243,15 +1304,19 @@ LRESULT CALLBACK WndProc(
         GetClientRect(hwnd, &rc);
 
         HDC memDC = CreateCompatibleDC(hdc);
+
         HBITMAP memBitmap = CreateCompatibleBitmap(
             hdc,
             rc.right,
             rc.bottom
         );
 
-        HGDIOBJ oldBitmap =
-            SelectObject(memDC, memBitmap);
+        HGDIOBJ oldBitmap = SelectObject(
+            memDC,
+            memBitmap
+        );
 
+        // 背景
         HBRUSH background =
             CreateSolidBrush(RGB(35, 35, 42));
 
@@ -1278,7 +1343,7 @@ LRESULT CALLBACK WndProc(
             DT_CENTER | DT_VCENTER | DT_SINGLELINE
         );
 
-        // キャンバス領域
+        // キャンバス
         RECT canvasRect = {
             CANVAS_LEFT,
             CANVAS_TOP,
@@ -1298,7 +1363,7 @@ LRESULT CALLBACK WndProc(
         FrameRect(memDC, &canvasRect, canvasBorder);
         DeleteObject(canvasBorder);
 
-        // ブロック描画
+        // ブロックと選択枠
         g_manager.DrawAll(memDC);
 
         // ズーム表示
@@ -1320,13 +1385,16 @@ LRESULT CALLBACK WndProc(
             static_cast<int>(wcslen(zoomText))
         );
 
+        // バッファを画面へ転送
         BitBlt(
             hdc,
-            0, 0,
+            0,
+            0,
             rc.right,
             rc.bottom,
             memDC,
-            0, 0,
+            0,
+            0,
             SRCCOPY
         );
 
@@ -1335,21 +1403,30 @@ LRESULT CALLBACK WndProc(
         DeleteDC(memDC);
 
         EndPaint(hwnd, &ps);
+
         return 0;
     }
 
+    // ========================================================
+    // 終了処理
+    // ========================================================
+
     case WM_DESTROY:
+    {
         if (g_blockList && g_oldListProc)
         {
             SetWindowLongPtrW(
                 g_blockList,
                 GWLP_WNDPROC,
-                reinterpret_cast<LONG_PTR>(g_oldListProc)
+                reinterpret_cast<LONG_PTR>(
+                    g_oldListProc
+                    )
             );
         }
 
         PostQuitMessage(0);
         return 0;
+    }
     }
 
     return DefWindowProcW(
@@ -1359,6 +1436,7 @@ LRESULT CALLBACK WndProc(
         lParam
     );
 }
+
 
 
 int WINAPI WinMain(
