@@ -572,6 +572,76 @@ void DrawCategoryButton(
         SelectObject(hdc, oldFont);
 }
 
+// =======================================================
+// ブロック一覧の項目をカテゴリーごとに色分け
+// =========================================================
+void DrawBlockListItem(
+    const DRAWITEMSTRUCT* dis)
+{
+    if (!dis)
+        return;
+
+    HDC hdc = dis->hDC;
+    RECT rc = dis->rcItem;
+
+    int index = static_cast<int>(dis->itemID);
+
+    // 選択状態
+    bool selected =
+        (dis->itemState & ODS_SELECTED) != 0;
+
+    // カテゴリーの色を取得
+    COLORREF color =
+        CATEGORY_COLORS[
+            static_cast<int>(g_selectedCategory)
+        ];
+
+    // 選択中は明るくする
+    if (selected)
+    {
+        color = RGB(
+            (std::min)(GetRValue(color) + 35, 255),
+            (std::min)(GetGValue(color) + 35, 255),
+            (std::min)(GetBValue(color) + 35, 255)
+        );
+    }
+
+    HBRUSH brush = CreateSolidBrush(color);
+    FillRect(hdc, &rc, brush);
+    DeleteObject(brush);
+
+    // 文字色
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 255, 255));
+
+    // 項目名を取得して描画
+    if (index >= 0 &&
+        index < static_cast<int>(
+            g_visibleBlockTypes.size()))
+    {
+        std::wstring name =
+            GetBlockName(g_visibleBlockTypes[index]);
+
+        rc.left += 8;
+
+        DrawTextW(
+            hdc,
+            name.c_str(),
+            -1,
+            &rc,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE
+        );
+    }
+
+    // フォーカス枠
+    if (dis->itemState & ODS_FOCUS)
+    {
+        DrawFocusRect(hdc, &dis->rcItem);
+    }
+}
+
+
+
 // ============================================================
 // プロジェクト保存
 // ============================================================
@@ -680,7 +750,8 @@ LRESULT CALLBACK WndProc(
             nullptr,
             WS_CHILD | WS_VISIBLE |
             WS_BORDER | WS_VSCROLL |
-            LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+            LBS_NOTIFY | LBS_NOINTEGRALHEIGHT|
+            LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
             150, 60, 180, 190,
             hwnd,
             reinterpret_cast<HMENU>(
@@ -793,6 +864,13 @@ LRESULT CALLBACK WndProc(
             );
             return TRUE;
         }
+
+        if (id == ID_BLOCK_LIST)
+        {
+            DrawBlockListItem(dis);
+            return TRUE;
+        }
+
 
         if (id == ID_ADD)
         {
