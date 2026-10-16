@@ -125,13 +125,13 @@ struct Block
     int h = 54;
 
     // 移動距離
-    int distance = 100;
+    int distance = 0;
 
     // 繰り返し回数
-    int repeatCount = 3;
+    int repeatCount = 0;
 
     // 待機時間
-    double waitSeconds = 2.0;
+    double waitSeconds = 0.;
 
     // 条件分岐
     ConditionType condition = ConditionType::Always;

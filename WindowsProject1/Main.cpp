@@ -30,6 +30,10 @@ HWND g_addButton = nullptr;
 HWND g_deleteButton = nullptr;
 HWND g_resetViewButton = nullptr;
 HWND g_mainWindow = nullptr;
+HWND g_numericEdit = nullptr;
+int g_numericEditBlockIndex = -1;
+int g_numericEditField = 0; // 1=distance, 2=repeatCount, 3=waitSeconds, 4=conditionValue, 5=value
+WNDPROC g_oldNumericEditProc = nullptr;
 
 WNDPROC g_oldListProc = nullptr;
 
@@ -696,12 +700,15 @@ void DrawBlockListItem(
 
 
 
+void FinishNumericEdit(HWND hwnd, bool commit);
+
 // ============================================================
 // プロジェクト保存
 // ============================================================
 
 bool SaveProject(HWND hwnd)
 {
+    if (g_numericEdit) FinishNumericEdit(hwnd, true);
     wchar_t path[MAX_PATH] = L"";
 
     OPENFILENAMEW ofn{};
@@ -736,6 +743,7 @@ bool SaveProject(HWND hwnd)
 
 bool LoadProject(HWND hwnd)
 {
+    if (g_numericEdit) FinishNumericEdit(hwnd, true);
     wchar_t path[MAX_PATH] = L"";
 
     OPENFILENAMEW ofn{};
@@ -779,6 +787,146 @@ bool LoadProject(HWND hwnd)
     return true;
 }
 
+
+// ============================================================
+// ブロック内の数値入力
+// ============================================================
+
+std::wstring GetNumericPrefix(const Block& block, int& field)
+{
+    field = 0;
+    switch (block.type)
+    {
+    case BlockType::Move:      field = 1; return L"前進する ";
+    case BlockType::MoveRight: field = 1; return L"右に移動 ";
+    case BlockType::MoveLeft:  field = 1; return L"左に移動 ";
+    case BlockType::Bark:      field = 1; return L"後退する ";
+    case BlockType::Repeat:    field = 2; return L"繰り返す ";
+    case BlockType::Wait:      field = 3; return L"指定秒数待つ ";
+    case BlockType::CreateVariable: field = 5; return L"変数をつくる " + block.variableName + L" = ";
+    case BlockType::SetVariable:    field = 5; return block.variableName + L" に ";
+    case BlockType::ChangeVariable: field = 5; return block.variableName + L" を ";
+    case BlockType::AddVariable:    field = 5; return block.variableName + L" に ";
+    case BlockType::SubtractVariable:field = 5; return block.variableName + L" から ";
+    default: return L"";
+    }
+}
+
+LRESULT CALLBACK NumericEditProc(HWND edit, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_KEYDOWN && (wp == VK_RETURN || wp == VK_ESCAPE))
+    {
+        HWND parent = GetParent(edit);
+        if (wp == VK_RETURN)
+            SendMessageW(parent, WM_COMMAND, MAKEWPARAM(1090, EN_KILLFOCUS), reinterpret_cast<LPARAM>(edit));
+        else
+        {
+            DestroyWindow(edit);
+            g_numericEdit = nullptr;
+            g_numericEditBlockIndex = -1;
+            g_oldNumericEditProc = nullptr;
+            SetFocus(parent);
+            InvalidateRect(parent, nullptr, FALSE);
+        }
+        return 0;
+    }
+    return CallWindowProcW(g_oldNumericEditProc, edit, msg, wp, lp);
+}
+
+void FinishNumericEdit(HWND hwnd, bool commit)
+{
+    if (!g_numericEdit)
+        return;
+
+    if (commit && g_numericEditBlockIndex >= 0)
+    {
+        wchar_t buffer[64]{};
+        GetWindowTextW(g_numericEdit, buffer, 63);
+        wchar_t* end = nullptr;
+        const auto& blocks = g_manager.GetBlocks();
+        if (g_numericEditBlockIndex < static_cast<int>(blocks.size()))
+        {
+            Block updated = blocks[g_numericEditBlockIndex];
+            if (g_numericEditField == 3)
+            {
+                double value = wcstod(buffer, &end);
+                if (end != buffer && *end == L'\0' && std::isfinite(value) && value >= 0.0 && value <= 100000.0)
+                    updated.waitSeconds = value;
+            }
+            else
+            {
+                long value = wcstol(buffer, &end, 10);
+                if (end != buffer && *end == L'\0' && value >= 0 && value <= 1000000)
+                {
+                    if (g_numericEditField == 1) updated.distance = static_cast<int>(value);
+                    else if (g_numericEditField == 2) updated.repeatCount = static_cast<int>(value);
+                    else if (g_numericEditField == 5) updated.value = static_cast<int>(value);
+                }
+            }
+            g_manager.UpdateBlockAt(g_numericEditBlockIndex, updated);
+        }
+    }
+
+    HWND edit = g_numericEdit;
+    g_numericEdit = nullptr;
+    g_numericEditBlockIndex = -1;
+    g_numericEditField = 0;
+    g_oldNumericEditProc = nullptr;
+    if (IsWindow(edit)) DestroyWindow(edit);
+    SetFocus(hwnd);
+    InvalidateRect(hwnd, nullptr, FALSE);
+}
+
+bool TryStartNumericEdit(HWND hwnd, POINT screenPoint, POINT worldPoint)
+{
+    const auto& blocks = g_manager.GetBlocks();
+    for (int i = static_cast<int>(blocks.size()) - 1; i >= 0; --i)
+    {
+        const Block& block = blocks[static_cast<size_t>(i)];
+        int field = 0;
+        std::wstring prefix = GetNumericPrefix(block, field);
+        if (field == 0 || worldPoint.y < block.y + 8 || worldPoint.y > block.y + block.h - 4)
+            continue;
+
+        HDC hdc = GetDC(hwnd);
+        HFONT font = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        HGDIOBJ oldFont = SelectObject(hdc, font);
+        SIZE prefixSize{};
+        GetTextExtentPoint32W(hdc, prefix.c_str(), static_cast<int>(prefix.size()), &prefixSize);
+        SelectObject(hdc, oldFont);
+        ReleaseDC(hwnd, hdc);
+
+        int valueX = block.x + 12 + prefixSize.cx;
+        int valueWidth = 54;
+        int left = static_cast<int>(std::lround(valueX * g_zoom + g_viewX));
+        int top = static_cast<int>(std::lround((block.y + 15) * g_zoom + g_viewY));
+        int width = static_cast<int>(std::lround(valueWidth * g_zoom));
+        int height = static_cast<int>(std::lround(24 * g_zoom));
+        RECT hit{ left - 3, top - 3, left + width + 3, top + height + 3 };
+        if (screenPoint.x < hit.left || screenPoint.x > hit.right || screenPoint.y < hit.top || screenPoint.y > hit.bottom)
+            continue;
+
+        if (g_numericEdit) FinishNumericEdit(hwnd, true);
+        std::wstring initial;
+        if (field == 1) initial = std::to_wstring(block.distance);
+        else if (field == 2) initial = std::to_wstring(block.repeatCount);
+        else if (field == 3) initial = std::to_wstring(block.waitSeconds);
+        else initial = std::to_wstring(block.value);
+
+        g_numericEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", initial.c_str(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
+            left, top, (std::max)(width, 44), (std::max)(height, 20), hwnd,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(1090)), GetModuleHandleW(nullptr), nullptr);
+        if (!g_numericEdit) return false;
+        g_numericEditBlockIndex = i;
+        g_numericEditField = field;
+        g_oldNumericEditProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(g_numericEdit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(NumericEditProc)));
+        SendMessageW(g_numericEdit, EM_SETSEL, 0, -1);
+        SetFocus(g_numericEdit);
+        return true;
+    }
+    return false;
+}
 
 LRESULT CALLBACK WndProc(
     HWND hwnd,
@@ -1064,6 +1212,12 @@ LRESULT CALLBACK WndProc(
     {
         int id = LOWORD(wParam);
         int notification = HIWORD(wParam);
+
+        if (id == 1090 && notification == EN_KILLFOCUS)
+        {
+            FinishNumericEdit(hwnd, true);
+            return 0;
+        }
 
         // カテゴリ切り替え
         if (id >= ID_CATEGORY_BASE &&
@@ -1383,6 +1537,10 @@ LRESULT CALLBACK WndProc(
             return 0;
 
         POINT world = g_manager.ScreenToWorld(p.x, p.y);
+        if (TryStartNumericEdit(hwnd, p, world))
+            return 0;
+        if (g_numericEdit)
+            FinishNumericEdit(hwnd, true);
 
         const auto& blocks = g_manager.GetBlocks();
         bool hitBlock = false;
@@ -1676,6 +1834,7 @@ LRESULT CALLBACK WndProc(
 
     case WM_DESTROY:
     {
+        if (g_numericEdit) FinishNumericEdit(hwnd, false);
         if (g_blockList && g_oldListProc)
         {
             SetWindowLongPtrW(

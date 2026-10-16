@@ -1,4 +1,4 @@
-#include "BlockManager.h"
+ï»¿#include "BlockManager.h"
 
 #include <cstdlib> 
 #include <cmath> 
@@ -8,7 +8,7 @@
 namespace { constexpr int SNAP_DISTANCE = 24; constexpr int COLUMN_DISTANCE = 35; constexpr int TAB_HEIGHT = 8; constexpr int SELECTION_PADDING = 6; constexpr int MAX_HISTORY = 100; }
 
 // ============================================================
-// ‰Šú‰» 
+// åˆæœŸåŒ–
 // ============================================================
 
 void BlockManager::Initialize() {
@@ -45,7 +45,9 @@ void BlockManager::Initialize() {
 
 }
 
-// ============================================================ // íœƒ‚[ƒh // ============================================================
+// ============================================================ 
+// å‰Šé™¤ãƒ¢ãƒ¼ãƒ‰ 
+// ============================================================
 
 void BlockManager::SetDeleteMode(bool enabled) {
     deleteMode = enabled;
@@ -66,7 +68,7 @@ void BlockManager::SetDeleteMode(bool enabled) {
 bool BlockManager::IsDeleteMode() const { return deleteMode; }
 
 // ============================================================ 
-//  •\¦ˆÊ’uEƒY[ƒ€ 
+//  è¡¨ç¤ºã‚ºãƒ¼ãƒ 
 //  ============================================================
 
 void BlockManager::SetViewTransform(float newZoom, float newOffsetX, float newOffsetY) {
@@ -107,7 +109,7 @@ POINT BlockManager::WorldToScreen(int x, int y) const {
 }
 
 // ============================================================ 
-// •`‰æ 
+// æç”»
 // ============================================================
 
 
@@ -131,13 +133,13 @@ void BlockManager::DrawAll(HDC hdc) const
 
     SetWorldTransform(hdc, &transform);
 
-    // ‚·‚×‚Ä‚ÌƒuƒƒbƒN‚ğ•`‰æ
+    // å…¨ã¦ã®ãƒ–ãƒ­ãƒƒã‚¯ã‚’æç”»
     for (const Block& block : blocks)
     {
         DrawBlock(hdc, block);
     }
 
-    // Â˜g‚Ì•`‰æİ’è
+    // é’æ ã®æç”»è¨­å®š
     HPEN selectionPen = CreatePen(
         PS_SOLID,
         2,
@@ -154,89 +156,89 @@ void BlockManager::DrawAll(HDC hdc) const
 
         std::vector<bool> processed(count, false);
 
-        // ‘I‘ğ‘ÎÛ‚©‚Ç‚¤‚©‚ğ”»’è
+        // é¸æŠå¯¾è±¡ã‹ã©ã†ã‹ã‚’åˆ¤å®š
         auto isSelected = [&](int index) -> bool
-        {
-            if (!selectedBlocks.empty())
             {
-                return std::find(
-                    selectedBlocks.begin(),
-                    selectedBlocks.end(),
-                    index) != selectedBlocks.end();
-            }
+                if (!selectedBlocks.empty())
+                {
+                    return std::find(
+                        selectedBlocks.begin(),
+                        selectedBlocks.end(),
+                        index) != selectedBlocks.end();
+                }
 
-            if (selected < 0 || selected >= count)
-                return false;
+                if (selected < 0 || selected >= count)
+                    return false;
 
-            return index == selected ||
-                   IsDescendant(index, selected);
-        };
+                return index == selected ||
+                    IsDescendant(index, selected);
+            };
 
-        // w’èƒuƒƒbƒN‚Ìe‚ğ‚½‚Ç‚Á‚ÄAÚ‘±ƒOƒ‹[ƒv‚Ìæ“ª‚ğæ“¾
+        // æŒ‡å®šãƒ–ãƒ­ãƒƒã‚¯ã®è¦ªã‚’ãŸã©ã£ã¦ã€æ¥ç¶šã‚°ãƒ«ãƒ¼ãƒ—ã®å…ˆé ­ã‚’å–å¾—
         auto getRoot = [&](int index) -> int
-        {
-            int current = index;
-
-            for (int steps = 0; steps < count; ++steps)
             {
-                if (current < 0 ||
-                    current >= static_cast<int>(parent.size()))
+                int current = index;
+
+                for (int steps = 0; steps < count; ++steps)
                 {
-                    break;
+                    if (current < 0 ||
+                        current >= static_cast<int>(parent.size()))
+                    {
+                        break;
+                    }
+
+                    int p = parent[current];
+
+                    if (p < 0 || p >= count)
+                        break;
+
+                    current = p;
                 }
 
-                int p = parent[current];
+                return current;
+            };
 
-                if (p < 0 || p >= count)
-                    break;
-
-                current = p;
-            }
-
-            return current;
-        };
-
-        // Ú‘±ƒOƒ‹[ƒv‚ğ1‚Â‚ÌÂ˜g‚ÅˆÍ‚Ş
+        // æ¥ç¶šã‚°ãƒ«ãƒ¼ãƒ—ã‚’1ã¤ã®é’æ ã§å›²ã‚€
         auto drawGroup = [&](int root)
-        {
-            int minX = blocks[root].x;
-            int minY = blocks[root].y;
-            int maxX = blocks[root].x + blocks[root].w;
-            int maxY = blocks[root].y + blocks[root].h;
-
-            int groupSize = 0;
-
-            for (int i = 0; i < count; ++i)
             {
-                if (i == root || IsDescendant(i, root))
+                int minX = blocks[root].x;
+                int minY = blocks[root].y;
+                int maxX = blocks[root].x + blocks[root].w;
+                int maxY = blocks[root].y + blocks[root].h;
+
+                int groupSize = 0;
+
+                for (int i = 0; i < count; ++i)
                 {
-                    if (!isSelected(i))
-                        continue;
+                    if (i == root || IsDescendant(i, root))
+                    {
+                        if (!isSelected(i))
+                            continue;
 
-                    const Block& block = blocks[i];
+                        const Block& block = blocks[i];
 
-                    minX = (std::min)(minX, block.x);
-                    minY = (std::min)(minY, block.y);
-                    maxX = (std::max)(maxX, block.x + block.w);
-                    maxY = (std::max)(maxY, block.y + block.h);
+                        minX = (std::min)(minX, block.x);
+                        minY = (std::min)(minY, block.y);
+                        maxX = (std::max)(maxX, block.x + block.w);
+                        maxY = (std::max)(maxY, block.y + block.h);
 
-                    processed[i] = true;
-                    ++groupSize;
+                        processed[i] = true;
+                        ++groupSize;
+                    }
                 }
-            }
 
-            if (groupSize == 0)
-                return;
+                if (groupSize == 0)
+                    return;
 
-            Rectangle(
-                hdc,
-                minX - SELECTION_PADDING,
-                minY - SELECTION_PADDING,
-                maxX + SELECTION_PADDING,
-                maxY + SELECTION_PADDING);
-        };
+                Rectangle(
+                    hdc,
+                    minX - SELECTION_PADDING,
+                    minY - SELECTION_PADDING,
+                    maxX + SELECTION_PADDING,
+                    maxY + SELECTION_PADDING);
+            };
 
-        // ‘I‘ğ‚³‚ê‚½ƒuƒƒbƒN‚ğÚ‘±ƒOƒ‹[ƒv‚²‚Æ‚É•`‰æ
+        // é¸æŠã•ã‚ŒãŸãƒ–ãƒ­ãƒƒã‚¯ã‚’æ¥ç¶šã‚°ãƒ«ãƒ¼ãƒ—ã”ã¨ã«æç”»
         for (int i = 0; i < count; ++i)
         {
             if (!isSelected(i) || processed[i])
@@ -255,7 +257,7 @@ void BlockManager::DrawAll(HDC hdc) const
         DeleteObject(selectionPen);
     }
 
-    // ”ÍˆÍ‘I‘ğ’†‚ÌlŠpŒ`
+    // ç¯„å›²é¸æŠä¸­ã®å››è§’å½¢
     if (selectingRange)
     {
         int left = (std::min)(
@@ -305,7 +307,7 @@ void BlockManager::DrawAll(HDC hdc) const
 
 
 // ============================================================ 
-// ƒ}ƒEƒX‘€ì 
+// ãƒã‚¦ã‚¹æ“ä½œ 
 // ============================================================
 
 
@@ -342,8 +344,8 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
         return;
     }
 
-    // •¡”‘I‘ğ’†‚ÌƒuƒƒbƒN‚ğƒNƒŠƒbƒN‚µ‚½ê‡‚ÍA
-    // ‚»‚Ì‘I‘ğ‚ğˆÛ‚·‚é
+    // è¤‡æ•°é¸æŠä¸­ã®ãƒ–ãƒ­ãƒƒã‚¯ã‚’ã‚¯ãƒªãƒƒã‚¯ã—ãŸå ´åˆã¯ã€
+   // ãã®é¸æŠã‚’ç¶­æŒã™ã‚‹
     bool clickedSelectedBlock =
         std::find(
             selectedBlocks.begin(),
@@ -371,12 +373,12 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
 
     if (!selectedBlocks.empty())
     {
-        // •¡”‘I‘ğ‚µ‚½ƒuƒƒbƒN‚ğˆÚ“®‘ÎÛ‚É‚·‚é
+        // è¤‡æ•°é¸æŠã—ãŸãƒ–ãƒ­ãƒƒã‚¯ã‚’ç§»å‹•å¯¾è±¡ã«ã™ã‚‹
         dragBlocks = selectedBlocks;
     }
     else
     {
-        // ’Pˆê‘I‘ğ‚Ìê‡‚Í‘I‘ğƒuƒƒbƒN‚Æq‘·‚ğ‘ÎÛ‚É‚·‚é
+        // å˜ä¸€é¸æŠã®å ´åˆã¯é¸æŠãƒ–ãƒ­ãƒƒã‚¯ã¨å­å­«ã‚’å¯¾è±¡ã«ã™ã‚‹
         dragBlocks.push_back(hitIndex);
 
         for (size_t i = 0; i < dragBlocks.size(); ++i)
@@ -419,8 +421,8 @@ void BlockManager::OnMouseMove(int x, int y)
     {
         SaveUndoState();
 
-        // ƒhƒ‰ƒbƒO‚·‚éƒuƒƒbƒN‚ÌeÚ‘±‚ğ‰ğœ‚·‚é
-        // ’Pˆê‘I‘ğ‚Ì‚İA]—ˆ‚ÌÚ‘±‰ğœ“®ì‚ğs‚¤
+        // ãƒ‰ãƒ©ãƒƒã‚°ã™ã‚‹ãƒ–ãƒ­ãƒƒã‚¯ã®è¦ªæ¥ç¶šã‚’è§£é™¤ã™ã‚‹
+        // å˜ä¸€é¸æŠæ™‚ã®ã¿ã€å¾“æ¥ã®æ¥ç¶šè§£é™¤å‹•ä½œã‚’è¡Œã†
         if (selectedBlocks.empty())
             parent[selected] = -1;
 
@@ -455,7 +457,7 @@ void BlockManager::OnMouseUp(HWND hwnd) {
 }
 
 // ============================================================ 
-// Ú‘±‚³‚ê‚½ƒuƒƒbƒN‚ÌˆÚ“® 
+// æ¥ç¶šã•ã‚ŒãŸãƒ–ãƒ­ãƒƒã‚¯ã®ç§»å‹•
 // ============================================================
 
 void BlockManager::MoveConnectedBlocks(int dx, int dy) { for (int i = 0; i < static_cast<int>(blocks.size()); ++i) { if (i == selected || IsDescendant(i, selected)) { blocks[i].x += dx; blocks[i].y += dy; } } }
@@ -501,7 +503,7 @@ int BlockManager::GetChild(int blockIndex) const {
 }
 
 // ============================================================ 
-// ƒuƒƒbƒN‚ÌÚ‘± 
+// ãƒ–ãƒ­ãƒƒã‚¯ã®æ¥ç¶š 
 // ============================================================
 
 void BlockManager::SnapSelectedBlock() {
@@ -566,7 +568,7 @@ void BlockManager::SnapSelectedBlock() {
 }
 
 // ============================================================ 
-// Às‡˜ 
+// å®Ÿè¡Œé †åº
 // ============================================================
 
 std::vector<int> BlockManager::GetExecutionOrder() const {
@@ -600,10 +602,19 @@ std::vector<int> BlockManager::GetExecutionOrder() const {
 }
 
 // ============================================================ 
-// ƒuƒƒbƒNˆê—— 
+// ãƒ–ãƒ­ãƒƒã‚¯ä¸€è¦§
 // ============================================================
 
 const std::vector<Block>& BlockManager::GetBlocks() const { return blocks; }
+
+bool BlockManager::UpdateBlockAt(int index, const Block& updatedBlock)
+{
+    if (index < 0 || index >= static_cast<int>(blocks.size()))
+        return false;
+    SaveUndoState();
+    blocks[static_cast<size_t>(index)] = updatedBlock;
+    return true;
+}
 
 const std::vector<int>& BlockManager::GetParents() const { return parent; }
 
@@ -613,7 +624,7 @@ int BlockManager::GetSelectedBlockIndex() const { return selected; }
 
 int BlockManager::GetSelectedBlock() const { return selected; }
 
-// ============================================================ // ƒuƒƒbƒN’Ç‰Á // ============================================================
+// ============================================================ // ãƒ–ãƒ­ãƒƒã‚¯è¿½åŠ  // ============================================================
 
 void BlockManager::AddBlock(BlockType type, int x, int y) {
     SaveUndoState();
@@ -625,7 +636,7 @@ void BlockManager::AddBlock(BlockType type, int x, int y) {
 }
 
 // ============================================================ 
-// w’èˆÊ’u‚ÌƒuƒƒbƒN‚ğíœ 
+// æŒ‡å®šä½ç½®ã®ãƒ–ãƒ­ãƒƒã‚¯ã‚’å‰Šé™¤ 
 // ============================================================
 
 bool BlockManager::DeleteBlockAt(int x, int y) {
@@ -646,7 +657,7 @@ bool BlockManager::DeleteBlockAt(int x, int y) {
 
     std::vector<int> targets{ index };
 
-    // íœ‚µ‚½ƒuƒƒbƒN‚Ìq‘·‚àíœ‘ÎÛ‚É‚·‚é
+    // å‰Šé™¤ã—ãŸãƒ–ãƒ­ãƒƒã‚¯ã®å­å­«ã‚‚å‰Šé™¤å¯¾è±¡ã«ã™ã‚‹
     for (size_t i = 0; i < targets.size(); ++i)
     {
         int current = targets[i];
@@ -667,7 +678,7 @@ bool BlockManager::DeleteBlockAt(int x, int y) {
 }
 
 // ============================================================ 
-// ƒuƒƒbƒN‚Ì’u‚«Š·‚¦ 
+// ãƒ–ãƒ­ãƒƒã‚¯ã®ç½®ãæ›ãˆ
 // ============================================================
 
 bool BlockManager::ReplaceBlocks(const std::vector<Block>& newBlocks, const std::vector<int>& newParents) {
@@ -727,11 +738,11 @@ bool BlockManager::ReplaceBlocks(const std::vector<Block>& newBlocks, const std:
 }
 
 // ============================================================ 
-// ‘I‘ğ‰ğœ 
+// é¸æŠè§£é™¤ 
 // ============================================================
 
 void BlockManager::ClearSelection() {
-    selected = -1; 
+    selected = -1;
     selectedBlocks.clear();
 
     dragging = false;
@@ -757,7 +768,7 @@ void BlockManager::SelectBlock(int index)
 }
 
 // ============================================================ 
-// ‘I‘ğ‚µ‚½ƒuƒƒbƒN‚ğíœ 
+// æŠã—ãŸãƒ–ãƒ­ãƒƒã‚¯ã‚’å‰Šé™¤ 
 // ============================================================
 
 bool BlockManager::DeleteSelectedBlock() {
@@ -776,7 +787,7 @@ bool BlockManager::DeleteSelectedBlock() {
 }
 
 // ============================================================ 
-// •¡”ƒuƒƒbƒN‚ğ‚Ü‚Æ‚ß‚Äíœ 
+// è¤‡æ•°ãƒ–ãƒ­ãƒƒã‚¯ã‚’ã¾ã¨ã‚ã¦å‰Šé™¤ 
 // ============================================================
 
 bool BlockManager::DeleteSelectedBlocks() {
@@ -789,7 +800,7 @@ bool BlockManager::DeleteSelectedBlocks() {
 }
 
 // ============================================================ 
-// w’è‚³‚ê‚½•¡”ƒuƒƒbƒN‚ğíœ 
+// æŒ‡å®šã•ã‚ŒãŸè¤‡æ•°ãƒ–ãƒ­ãƒƒã‚¯ã‚’å‰Šé™¤ 
 // ============================================================
 
 void BlockManager::DeleteBlocks(const std::vector<int>& indices) {
@@ -871,7 +882,7 @@ void BlockManager::DeleteBlocks(const std::vector<int>& indices) {
 }
 
 // ============================================================ 
-// •¡”‘I‘ğ 
+// è¤‡æ•°é¸æŠ 
 // ============================================================
 
 void BlockManager::StartRangeSelection(int x, int y) {
@@ -901,7 +912,7 @@ void BlockManager::UpdateRangeSelection(int x, int y) {
 
     selectedBlocks.clear();
 
-    // ‹éŒ`‚ÉŒğ·‚·‚éƒuƒƒbƒN‚ğ‚·‚×‚Ä‘I‘ğ
+    // çŸ©å½¢ã«äº¤å·®ã™ã‚‹ãƒ–ãƒ­ãƒƒã‚¯ã‚’ã™ã¹ã¦é¸æŠ
     for (int i = 0;
         i < static_cast<int>(blocks.size());
         ++i)
@@ -932,7 +943,7 @@ const std::vector<int>& BlockManager::GetSelectedBlocks() const { return selecte
 bool BlockManager::IsSelectingRange() const { return selectingRange; }
 
 // ============================================================ 
-// ƒRƒs[ 
+// ã‚³ãƒ”ãƒ¼
 // ============================================================
 
 bool BlockManager::CopySelectedBlock() {
@@ -945,7 +956,7 @@ bool BlockManager::CopySelectedBlock() {
     else if (selected >= 0 &&
         selected < static_cast<int>(blocks.size()))
     {
-        // ’P‘Ì‘I‘ğ‚Ìê‡‚Íq‘·‚àƒRƒs[‚·‚é
+        // ï¿½Pï¿½Ì‘Iï¿½ï¿½ï¿½Ìê‡ï¿½Íqï¿½ï¿½ï¿½ï¿½ï¿½Rï¿½sï¿½[ï¿½ï¿½ï¿½ï¿½
         selection.push_back(selected);
 
         for (size_t i = 0; i < selection.size(); ++i)
@@ -989,7 +1000,7 @@ bool BlockManager::CopySelectedBlock() {
         copiedParents.push_back(-1);
     }
 
-    // ƒRƒs[“à‚É—¼•û‚ÌƒuƒƒbƒN‚ªŠÜ‚Ü‚ê‚éê‡‚¾‚¯Ú‘±‚ğˆÛ
+    // ï¿½Rï¿½sï¿½[ï¿½ï¿½ï¿½É—ï¿½ï¿½ï¿½ï¿½Ìƒuï¿½ï¿½ï¿½bï¿½Nï¿½ï¿½ï¿½Ü‚Ü‚ï¿½ï¿½ê‡ï¿½ï¿½ï¿½ï¿½ï¿½Ú‘ï¿½ï¿½ï¿½ï¿½Ûï¿½
     for (size_t i = 0; i < selection.size(); ++i)
     {
         int oldIndex = selection[i];
@@ -1018,7 +1029,7 @@ bool BlockManager::CopySelectedBlock() {
 }
 
 // ============================================================ 
-// “\‚è•t‚¯ 
+// è²¼ã‚Šä»˜ã‘
 // ============================================================
 
 bool BlockManager::PasteCopiedBlock(int x, int y) {
@@ -1063,7 +1074,7 @@ bool BlockManager::PasteCopiedBlock(int x, int y) {
 }
 
 // ============================================================ 
-// Undo—š—ğ 
+// Undo 
 // ============================================================
 
 void BlockManager::PushUndoState(const BlockState& state) {
@@ -1089,7 +1100,7 @@ void BlockManager::SaveUndoState() {
 }
 
 // ============================================================ 
-// Œ³‚É–ß‚· 
+// å…ƒã«æˆ»ã™
 // ============================================================
 
 bool BlockManager::Undo() {
@@ -1116,7 +1127,7 @@ bool BlockManager::Undo() {
 }
 
 // ============================================================ 
-// ‚â‚è’¼‚· 
+// ã‚„ã‚Šç›´ã™
 // ============================================================
 
 bool BlockManager::Redo() {

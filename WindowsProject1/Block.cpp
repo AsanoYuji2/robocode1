@@ -166,33 +166,33 @@ std::wstring GetBlockName(const Block& b)
     switch (b.type)
     {
     case BlockType::Move:
-        return L"前進する " +
-            std::to_wstring(b.distance);
+        return L"前進する  " +
+            std::to_wstring(b.distance) + L" 歩";
 
     case BlockType::Turn:
-        return L"右に旋回 90度";
+        return L"右に旋回 90 度";
 
     case BlockType::TurnLeft:
-        return L"左に旋回 90度";
+        return L"左に旋回 90 度";
 
     case BlockType::MoveRight:
-        return L"右に移動 " +
-            std::to_wstring(b.distance);
+        return L"右に移動  " +
+            std::to_wstring(b.distance) + L" 歩";
 
     case BlockType::MoveLeft:
-        return L"左に移動 " +
-            std::to_wstring(b.distance);
+        return L"左に移動  " +
+            std::to_wstring(b.distance) + L" 歩";
 
     case BlockType::Fire:
         return L"弾を発射 威力2";
 
     case BlockType::Bark:
-        return L"後退する " +
-            std::to_wstring(b.distance);
+        return L"後退する  " +
+            std::to_wstring(b.distance) + L" 歩";
 
     case BlockType::Repeat:
-        return L"繰り返す " +
-            std::to_wstring(b.repeatCount) + L"回";
+        return L"繰り返す  " +
+            std::to_wstring(b.repeatCount) + L" 回";
 
     case BlockType::EndRepeat:
         return L"繰り返しここまで";
