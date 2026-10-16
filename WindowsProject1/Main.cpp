@@ -99,6 +99,19 @@ constexpr int ID_SHORTCUT_DELETE = 1017;
 // アクセラレータテーブル
 HACCEL g_hAccel = nullptr;
 
+// キーボードショートカット用 ID
+constexpr int ID_SHORTCUT_SELECT_ALL = 1010;
+constexpr int ID_SHORTCUT_SAVE = 1011;
+constexpr int ID_SHORTCUT_LOAD = 1012;
+constexpr int ID_SHORTCUT_UNDO = 1013;
+constexpr int ID_SHORTCUT_REDO = 1014;
+constexpr int ID_SHORTCUT_COPY = 1015;
+constexpr int ID_SHORTCUT_PASTE = 1016;
+constexpr int ID_SHORTCUT_DELETE = 1017;
+
+// アクセラレータテーブル
+HACCEL g_hAccel = nullptr;
+
 // ============================================================
 // カテゴリボタンID
 // ============================================================
@@ -472,25 +485,6 @@ LRESULT CALLBACK BlockListProc(
             0,
             0
         );
-
-        if (index != LB_ERR &&
-            index >= 0 &&
-            index < static_cast<LRESULT>(
-                g_visibleBlockTypes.size()))
-        {
-            g_dragBlockType =
-                g_visibleBlockTypes[static_cast<size_t>(index)];
-
-            g_draggingFromList = true;
-
-            // マウス位置をメインウィンドウ座標へ変換
-            POINT p = {
-                GET_X_LPARAM(lp),
-                GET_Y_LPARAM(lp)
-            };
-
-            ClientToScreen(hwnd, &p);
-            ScreenToClient(g_mainWindow, &p);
 
             g_listDragPoint = p;
 
