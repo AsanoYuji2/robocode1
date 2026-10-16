@@ -29,6 +29,7 @@ HWND g_blockList = nullptr;
 HWND g_addButton = nullptr;
 HWND g_deleteButton = nullptr;
 HWND g_resetViewButton = nullptr;
+HWND g_helpButton = nullptr;
 HWND g_mainWindow = nullptr;
 HWND g_numericEdit = nullptr;
 int g_numericEditBlockIndex = -1;
@@ -96,6 +97,7 @@ constexpr int ID_SHORTCUT_REDO = 1014;
 constexpr int ID_SHORTCUT_COPY = 1015;
 constexpr int ID_SHORTCUT_PASTE = 1016;
 constexpr int ID_SHORTCUT_DELETE = 1017;
+constexpr int ID_HELP_BUTTON = 1008;
 
 // アクセラレータテーブル
 HACCEL g_hAccel = nullptr;
@@ -1038,6 +1040,18 @@ LRESULT CALLBACK WndProc(
             nullptr
         );
 
+        g_helpButton = CreateWindowW(
+            L"BUTTON",
+            L"操作方法",
+            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+            150, 405, 195, 35,
+            hwnd,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(ID_HELP_BUTTON)),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
         UpdateButtonColors();
 
         return 0;
@@ -1124,6 +1138,16 @@ LRESULT CALLBACK WndProc(
                 dis,
                 COLOR_NORMAL,
                 L"読み込み"
+            );
+            return TRUE;
+        }
+
+        if (id == ID_HELP_BUTTON)
+        {
+            DrawCustomButton(
+                dis,
+                COLOR_NORMAL,
+                L"操作方法"
             );
             return TRUE;
         }
@@ -1287,6 +1311,7 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
+
         case ID_SHORTCUT_DELETE:
             if (g_manager.DeleteSelectedBlock())
                 InvalidateEditor();
@@ -1368,6 +1393,33 @@ LRESULT CALLBACK WndProc(
             {
                 LoadProject(hwnd);
                 InvalidateEditor();
+            }
+            return 0;
+
+            //操作方法ボタンが押されたときのポップアップ処理
+        case ID_HELP_BUTTON:
+            if (notification == BN_CLICKED)
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"【 ロボコード ブロックエディタ 操作ガイド 】\n\n"
+                    L"■ ブロックの基本操作\n"
+                    L"  ・追加      : リストから項目を選択 ＞ 「追加」ボタン\n"
+                    L"  ・移動      : キャンバス上でドラッグ＆ドロップ\n"
+                    L"  ・削除      : 「削除モード」をONにしてブロックをクリック\n\n"
+                    L"■ カメラ・画面操作\n"
+                    L"  ・スクロール: 右クリック ＋ ドラッグ\n"
+                    L"  ・拡大/縮小 : マウスホイール回転\n"
+                    L"  ・表示リセット: 「表示リセット」ボタン\n\n"
+                    L"■ キーボードショートカット\n"
+                    L"  ・保存 / 読み込み : Ctrl + S / Ctrl + O\n"
+                    L"  ・元に戻す / やり直し: Ctrl + Z / Ctrl + Y\n"
+                    L"  ・コピー / 貼り付け : Ctrl + C / Ctrl + V\n"
+                    L"  ・全選択 / 削除     : Ctrl + A / Delete",
+                    L"操作方法とヘルプ",
+                    MB_OK | MB_ICONINFORMATION
+                );
+
             }
             return 0;
         }
