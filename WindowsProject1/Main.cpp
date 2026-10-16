@@ -189,14 +189,15 @@ std::vector<BlockType> GetBlockTypes(
             BlockType::Turn,
             BlockType::TurnLeft,
             BlockType::MoveRight,
-            BlockType::MoveLeft
+            BlockType::MoveLeft,
+            BlockType::Bark
         };
 
     case BlockCategory::Action:
         return
         {
-            BlockType::Fire,
-            BlockType::Bark
+            BlockType::Fire
+           
         };
 
     case BlockCategory::Control:
@@ -1608,8 +1609,10 @@ LRESULT CALLBACK WndProc(
                 g_listDragPoint.y + 42
             };
 
-            HBRUSH dragBrush =
-                CreateSolidBrush(RGB(65, 120, 200));
+            // 選択中のカテゴリーの色を使用
+            HBRUSH dragBrush = CreateSolidBrush(
+                CATEGORY_COLORS[static_cast<int>(g_selectedCategory)]
+            );
 
             FillRect(memDC, &dragRect, dragBrush);
             DeleteObject(dragBrush);
