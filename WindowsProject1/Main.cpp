@@ -47,6 +47,8 @@ BlockType g_dragBlockType = BlockType::Move;
 POINT g_dragStart = { 0, 0 };
 POINT g_lastPanPoint = { 0, 0 };
 
+POINT g_listDragPoint = { 0, 0 };
+
 // ============================================================
 // ズーム・表示位置
 // ============================================================
@@ -80,6 +82,19 @@ constexpr int ID_BLOCK_LIST = 1004;
 constexpr int ID_RESET_VIEW = 1005;
 constexpr int ID_SAVE = 1006;
 constexpr int ID_LOAD = 1007;
+
+// キーボードショートカット用 ID
+constexpr int ID_SHORTCUT_SELECT_ALL = 1010;
+constexpr int ID_SHORTCUT_SAVE = 1011;
+constexpr int ID_SHORTCUT_LOAD = 1012;
+constexpr int ID_SHORTCUT_UNDO = 1013;
+constexpr int ID_SHORTCUT_REDO = 1014;
+constexpr int ID_SHORTCUT_COPY = 1015;
+constexpr int ID_SHORTCUT_PASTE = 1016;
+constexpr int ID_SHORTCUT_DELETE = 1017;
+
+// アクセラレータテーブル
+HACCEL g_hAccel = nullptr;
 
 // ============================================================
 // カテゴリボタンID
@@ -428,27 +443,65 @@ LRESULT CALLBACK BlockListProc(
     WPARAM wp,
     LPARAM lp)
 {
-    // 元のリストボックスの処理を呼び出す
-    if (g_oldListProc)
+    if (!g_oldListProc)
     {
-        return CallWindowProcW(
-            g_oldListProc,
-            hwnd,
-            msg,
-            wp,
-            lp
-        );
+        return DefWindowProcW(hwnd, msg, wp, lp);
     }
 
-    return DefWindowProcW(
+    // まずリストボックス本来の処理を行う
+    LRESULT result = CallWindowProcW(
+        g_oldListProc,
         hwnd,
         msg,
         wp,
         lp
     );
+
+    switch (msg)
+    {
+    case WM_LBUTTONDOWN:
+    {
+        // クリックされた項目を取得
+        LRESULT index = SendMessageW(
+            hwnd,
+            LB_GETCURSEL,
+            0,
+            0
+        );
+
+        if (index != LB_ERR &&
+            index >= 0 &&
+            index < static_cast<LRESULT>(
+                g_visibleBlockTypes.size()))
+        {
+            g_dragBlockType =
+                g_visibleBlockTypes[static_cast<size_t>(index)];
+
+            g_draggingFromList = true;
+
+            // マウス位置をメインウィンドウ座標へ変換
+            POINT p = {
+                GET_X_LPARAM(lp),
+                GET_Y_LPARAM(lp)
+            };
+
+            ClientToScreen(hwnd, &p);
+            ScreenToClient(g_mainWindow, &p);
+
+            g_listDragPoint = p;
+
+            // メインウィンドウでドラッグ操作を受け取る
+            SetCapture(g_mainWindow);
+
+            InvalidateEditor();
+        }
+
+        break;
+    }
+    }
+
+    return result;
 }
-
-
 
 // ============================================================
 // カテゴリボタンを作成
@@ -951,6 +1004,60 @@ LRESULT CALLBACK WndProc(
 
         switch (id)
         {
+            // ====================================================
+// キーボードショートカット
+// ====================================================
+
+        case ID_SHORTCUT_SELECT_ALL:
+            g_manager.SelectAllBlocks();
+            InvalidateEditor();
+            return 0;
+
+        case ID_SHORTCUT_SAVE:
+            SaveProject(hwnd);
+            return 0;
+
+        case ID_SHORTCUT_LOAD:
+            LoadProject(hwnd);
+            InvalidateEditor();
+            return 0;
+
+        case ID_SHORTCUT_UNDO:
+            if (g_manager.Undo())
+                InvalidateEditor();
+            return 0;
+
+        case ID_SHORTCUT_REDO:
+            if (g_manager.Redo())
+                InvalidateEditor();
+            return 0;
+
+        case ID_SHORTCUT_COPY:
+            g_manager.CopySelectedBlock();
+            return 0;
+
+        case ID_SHORTCUT_PASTE:
+        {
+            const auto& blocks = g_manager.GetBlocks();
+            int index = g_manager.GetSelectedBlockIndex();
+
+            if (index >= 0 &&
+                index < static_cast<int>(blocks.size()))
+            {
+                int x = blocks[index].x + 30;
+                int y = blocks[index].y + 30;
+
+                if (g_manager.PasteCopiedBlock(x, y))
+                    InvalidateEditor();
+            }
+
+            return 0;
+        }
+
+        case ID_SHORTCUT_DELETE:
+            if (g_manager.DeleteSelectedBlock())
+                InvalidateEditor();
+            return 0;
         case ID_ADD:
             if (notification == BN_CLICKED)
             {
@@ -1121,6 +1228,16 @@ LRESULT CALLBACK WndProc(
             GET_Y_LPARAM(lParam)
         };
 
+        // リストからブロックをドラッグ中
+        if (g_draggingFromList)
+        {
+            g_listDragPoint = p;
+
+            InvalidateEditor();
+
+            return 0;
+        }
+
         // キャンバス移動
         if (g_panning)
         {
@@ -1246,6 +1363,41 @@ LRESULT CALLBACK WndProc(
 
     case WM_LBUTTONUP:
     {
+        // リストからドラッグしたブロックをドロップ
+        if (g_draggingFromList)
+        {
+            POINT p = {
+                GET_X_LPARAM(lParam),
+                GET_Y_LPARAM(lParam)
+            };
+
+            // ドラッグ状態を先に解除
+            g_draggingFromList = false;
+
+            if (IsCanvasPoint(p))
+            {
+                // キャンバス座標をブロックのワールド座標に変換
+                POINT world = g_manager.ScreenToWorld(
+                    p.x,
+                    p.y
+                );
+
+                // ドロップ位置にブロックを追加
+                g_manager.AddBlock(
+                    g_dragBlockType,
+                    world.x,
+                    world.y
+                );
+            }
+
+            if (GetCapture() == hwnd)
+                ReleaseCapture();
+
+            InvalidateEditor();
+
+            return 0;
+        }
+
         if (g_manager.IsSelectingRange())
         {
             POINT p = {
@@ -1365,6 +1517,36 @@ LRESULT CALLBACK WndProc(
 
         // ブロックと選択枠
         g_manager.DrawAll(memDC);
+
+        // ドラッグ中のブロック名を表示
+        if (g_draggingFromList)
+        {
+            std::wstring name = GetBlockName(g_dragBlockType);
+
+            RECT dragRect = {
+                g_listDragPoint.x + 12,
+                g_listDragPoint.y + 12,
+                g_listDragPoint.x + 180,
+                g_listDragPoint.y + 42
+            };
+
+            HBRUSH dragBrush =
+                CreateSolidBrush(RGB(65, 120, 200));
+
+            FillRect(memDC, &dragRect, dragBrush);
+            DeleteObject(dragBrush);
+
+            SetBkMode(memDC, TRANSPARENT);
+            SetTextColor(memDC, RGB(255, 255, 255));
+
+            DrawTextW(
+                memDC,
+                name.c_str(),
+                -1,
+                &dragRect,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE
+            );
+        }
 
         // ズーム表示
         wchar_t zoomText[64]{};
@@ -1503,12 +1685,44 @@ int WINAPI WinMain(
 
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
+    ACCEL accel[] =
+    {
+        { FVIRTKEY | FCONTROL, 'A', ID_SHORTCUT_SELECT_ALL },
+        { FVIRTKEY | FCONTROL, 'S', ID_SHORTCUT_SAVE },
+        { FVIRTKEY | FCONTROL, 'O', ID_SHORTCUT_LOAD },
+        { FVIRTKEY | FCONTROL, 'Z', ID_SHORTCUT_UNDO },
+        { FVIRTKEY | FCONTROL, 'Y', ID_SHORTCUT_REDO },
+        { FVIRTKEY | FCONTROL, 'C', ID_SHORTCUT_COPY },
+        { FVIRTKEY | FCONTROL, 'V', ID_SHORTCUT_PASTE },
+        { FVIRTKEY, VK_DELETE, ID_SHORTCUT_DELETE }
+    };
+
+    g_hAccel = CreateAcceleratorTableW(
+        accel,
+        static_cast<int>(sizeof(accel) / sizeof(accel[0]))
+    );
+
+    if (!g_hAccel)
+    {
+        MessageBoxW(
+            hwnd,
+            L"ショートカットの登録に失敗しました。",
+            L"エラー",
+            MB_OK | MB_ICONERROR
+        );
+    }
 
     // メッセージループ
     MSG msg{};
 
     while (GetMessageW(&msg, nullptr, 0, 0) > 0)
     {
+        if (g_hAccel &&
+            TranslateAcceleratorW(hwnd, g_hAccel, &msg))
+        {
+            continue;
+        }
+
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
