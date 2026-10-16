@@ -30,64 +30,41 @@ COLORREF GetBlockColor(BlockType type)
 {
     switch (type)
     {
+        // 移動の項目
     case BlockType::Move:
-        return RGB(52, 120, 212);
-
     case BlockType::Turn:
     case BlockType::TurnLeft:
-        return RGB(38, 153, 100);
-
     case BlockType::MoveRight:
-        return RGB(0, 180, 200);
-
     case BlockType::MoveLeft:
-        return RGB(0, 140, 160);
+    case BlockType::Bark:
+        return RGB(52, 120, 212);
 
+        // アクション
     case BlockType::Fire:
         return RGB(218, 133, 39);
 
-    case BlockType::Bark:
-        return RGB(140, 80, 180);
-
-    case BlockType::Repeat:
-        return RGB(220, 80, 120);
-
+        // 制御
     case BlockType::EndRepeat:
-        return RGB(180, 60, 100);
-
+    case BlockType::Repeat:
     case BlockType::Wait:
+    case BlockType::If:
+    case BlockType::Else:
+    case BlockType::EndIf:
         return RGB(220, 154, 40);
 
-    case BlockType::If:
-        return RGB(190, 70, 120);
-
-    case BlockType::Else:
-        return RGB(230, 130, 60);
-
-    case BlockType::EndIf:
-        return RGB(130, 50, 90);
-
+        // 変数
     case BlockType::CreateVariable:
-        return RGB(52, 120, 212);
-
     case BlockType::SetVariable:
-        return RGB(38, 153, 100);
-
     case BlockType::ChangeVariable:
-        return RGB(230, 130, 60);
-
     case BlockType::AddVariable:
-        return RGB(30, 170, 100);
-
     case BlockType::SubtractVariable:
-        return RGB(210, 100, 50);
-
     case BlockType::SetBoolean:
-        return RGB(120, 90, 190);
+        return RGB(190, 70, 120);
     }
 
     return RGB(100, 100, 100);
 }
+
 
 // ============================================================
 // 条件名
