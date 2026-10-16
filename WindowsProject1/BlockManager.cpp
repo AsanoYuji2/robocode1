@@ -1,23 +1,25 @@
 #include "BlockManager.h"
 
-#include <cstdlib>
-#include <cmath>
-#include <algorithm>
+#include <cstdlib> 
+#include <cmath> 
+#include <algorithm> 
+#include <vector>
 
-namespace
-{
-    constexpr int SNAP_DISTANCE = 24;
-    constexpr int COLUMN_DISTANCE = 35;
-    constexpr int TAB_HEIGHT = 8;
-}
+namespace { constexpr int SNAP_DISTANCE = 24; constexpr int COLUMN_DISTANCE = 35; constexpr int TAB_HEIGHT = 8; constexpr int SELECTION_PADDING = 6; constexpr int MAX_HISTORY = 100; }
 
-void BlockManager::Initialize()
-{
-    blocks.clear();
-    parent.clear();
+// ============================================================
+// 初期化 
+// ============================================================
+
+void BlockManager::Initialize() {
+    blocks.clear(); parent.clear();
 
     undoStack.clear();
     redoStack.clear();
+
+    copiedBlocks.clear();
+    copiedParents.clear();
+    hasCopiedBlock = false;
 
     blocks.push_back({ BlockType::Move, 100, 120 });
     blocks.push_back({ BlockType::Turn, 100, 220 });
@@ -26,44 +28,57 @@ void BlockManager::Initialize()
     parent.assign(blocks.size(), -1);
 
     selected = -1;
+    selectedBlocks.clear();
+
     dragging = false;
     dragStarted = false;
     deleteMode = false;
+    selectingRange = false;
+
+    selectionStart = { 0, 0 };
+    selectionEnd = { 0, 0 };
 
     zoom = 1.0f;
     viewX = 350.0f;
     viewY = 0.0f;
+
+
 }
 
-void BlockManager::SetDeleteMode(bool enabled)
-{
+// ============================================================ // 削除モード // ============================================================
+
+void BlockManager::SetDeleteMode(bool enabled) {
     deleteMode = enabled;
+
+    dragging = false;
+    dragStarted = false;
+    selectingRange = false;
 
     if (enabled)
     {
-        dragging = false;
-        dragStarted = false;
         selected = -1;
+        selectedBlocks.clear();
     }
+
+
 }
 
-bool BlockManager::IsDeleteMode() const
-{
-    return deleteMode;
-}
+bool BlockManager::IsDeleteMode() const { return deleteMode; }
 
-void BlockManager::SetViewTransform(
-    float newZoom,
-    float newOffsetX,
-    float newOffsetY)
-{
+// ============================================================ 
+//  表示位置・ズーム 
+//  ============================================================
+
+void BlockManager::SetViewTransform(float newZoom, float newOffsetX, float newOffsetY) {
     zoom = (std::max)(0.25f, (std::min)(newZoom, 3.0f));
+
     viewX = newOffsetX;
     viewY = newOffsetY;
+
+
 }
 
-POINT BlockManager::ScreenToWorld(int x, int y) const
-{
+POINT BlockManager::ScreenToWorld(int x, int y) const {
     POINT result{};
 
     result.x = static_cast<LONG>(
@@ -73,10 +88,11 @@ POINT BlockManager::ScreenToWorld(int x, int y) const
         std::lround((y - viewY) / zoom));
 
     return result;
+
+
 }
 
-POINT BlockManager::WorldToScreen(int x, int y) const
-{
+POINT BlockManager::WorldToScreen(int x, int y) const {
     POINT result{};
 
     result.x = static_cast<LONG>(
@@ -86,7 +102,14 @@ POINT BlockManager::WorldToScreen(int x, int y) const
         std::lround(y * zoom + viewY));
 
     return result;
+
+
 }
+
+// ============================================================ 
+// 描画 
+// ============================================================
+
 
 void BlockManager::DrawAll(HDC hdc) const
 {
@@ -108,87 +131,276 @@ void BlockManager::DrawAll(HDC hdc) const
 
     SetWorldTransform(hdc, &transform);
 
-    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
+    // すべてのブロックを描画
+    for (const Block& block : blocks)
     {
-        const Block& block = blocks[i];
-
-        // 通常のブロック描画
         DrawBlock(hdc, block);
+    }
 
-        // 選択中のブロックには青い枠を描画
-        if (i == selected)
+    // 青枠の描画設定
+    HPEN selectionPen = CreatePen(
+        PS_SOLID,
+        2,
+        RGB(40, 150, 255));
+
+    if (selectionPen)
+    {
+        HGDIOBJ oldPen = SelectObject(hdc, selectionPen);
+        HGDIOBJ oldBrush = SelectObject(
+            hdc,
+            GetStockObject(HOLLOW_BRUSH));
+
+        const int count = static_cast<int>(blocks.size());
+
+        std::vector<bool> processed(count, false);
+
+        // 選択対象かどうかを判定
+        auto isSelected = [&](int index) -> bool
         {
-            HPEN pen = CreatePen(
-                PS_SOLID,
-                3,
-                RGB(40, 150, 255)
-            );
+            if (!selectedBlocks.empty())
+            {
+                return std::find(
+                    selectedBlocks.begin(),
+                    selectedBlocks.end(),
+                    index) != selectedBlocks.end();
+            }
 
-            HGDIOBJ oldPen = SelectObject(hdc, pen);
-            HGDIOBJ oldBrush = SelectObject(
-                hdc,
-                GetStockObject(HOLLOW_BRUSH)
-            );
+            if (selected < 0 || selected >= count)
+                return false;
+
+            return index == selected ||
+                   IsDescendant(index, selected);
+        };
+
+        // 指定ブロックの親をたどって、接続グループの先頭を取得
+        auto getRoot = [&](int index) -> int
+        {
+            int current = index;
+
+            for (int steps = 0; steps < count; ++steps)
+            {
+                if (current < 0 ||
+                    current >= static_cast<int>(parent.size()))
+                {
+                    break;
+                }
+
+                int p = parent[current];
+
+                if (p < 0 || p >= count)
+                    break;
+
+                current = p;
+            }
+
+            return current;
+        };
+
+        // 接続グループを1つの青枠で囲む
+        auto drawGroup = [&](int root)
+        {
+            int minX = blocks[root].x;
+            int minY = blocks[root].y;
+            int maxX = blocks[root].x + blocks[root].w;
+            int maxY = blocks[root].y + blocks[root].h;
+
+            int groupSize = 0;
+
+            for (int i = 0; i < count; ++i)
+            {
+                if (i == root || IsDescendant(i, root))
+                {
+                    if (!isSelected(i))
+                        continue;
+
+                    const Block& block = blocks[i];
+
+                    minX = (std::min)(minX, block.x);
+                    minY = (std::min)(minY, block.y);
+                    maxX = (std::max)(maxX, block.x + block.w);
+                    maxY = (std::max)(maxY, block.y + block.h);
+
+                    processed[i] = true;
+                    ++groupSize;
+                }
+            }
+
+            if (groupSize == 0)
+                return;
 
             Rectangle(
                 hdc,
-                block.x - 3,
-                block.y - 3,
-                block.x + block.w + 3,
-                block.y + block.h + 3
-            );
+                minX - SELECTION_PADDING,
+                minY - SELECTION_PADDING,
+                maxX + SELECTION_PADDING,
+                maxY + SELECTION_PADDING);
+        };
 
-            SelectObject(hdc, oldBrush);
-            SelectObject(hdc, oldPen);
+        // 選択されたブロックを接続グループごとに描画
+        for (int i = 0; i < count; ++i)
+        {
+            if (!isSelected(i) || processed[i])
+                continue;
 
-            DeleteObject(pen);
+            int root = getRoot(i);
+
+            if (root < 0 || root >= count)
+                continue;
+
+            drawGroup(root);
+        }
+
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(selectionPen);
+    }
+
+    // 範囲選択中の四角形
+    if (selectingRange)
+    {
+        int left = (std::min)(
+            selectionStart.x,
+            selectionEnd.x);
+
+        int top = (std::min)(
+            selectionStart.y,
+            selectionEnd.y);
+
+        int right = (std::max)(
+            selectionStart.x,
+            selectionEnd.x);
+
+        int bottom = (std::max)(
+            selectionStart.y,
+            selectionEnd.y);
+
+        HPEN rangePen = CreatePen(
+            PS_SOLID,
+            2,
+            RGB(40, 150, 255));
+
+        if (rangePen)
+        {
+            HGDIOBJ previousPen = SelectObject(hdc, rangePen);
+            HGDIOBJ previousBrush = SelectObject(
+                hdc,
+                GetStockObject(HOLLOW_BRUSH));
+
+            Rectangle(
+                hdc,
+                left,
+                top,
+                right,
+                bottom);
+
+            SelectObject(hdc, previousBrush);
+            SelectObject(hdc, previousPen);
+
+            DeleteObject(rangePen);
         }
     }
 
     RestoreDC(hdc, savedDC);
 }
 
-void BlockManager::OnMouseDown(
-    HWND hwnd,
-    int x,
-    int y)
+
+// ============================================================ 
+// マウス操作 
+// ============================================================
+
+
+void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
 {
     POINT world = ScreenToWorld(x, y);
 
-    // 削除モード
     if (deleteMode)
     {
         DeleteBlockAt(world.x, world.y);
         return;
     }
 
-    // 手前のブロックから順に判定
+    int hitIndex = -1;
+
     for (int i = static_cast<int>(blocks.size()) - 1;
         i >= 0; --i)
     {
         if (HitBlock(blocks[i], world.x, world.y))
         {
-            selected = i;
-
-            offsetX = world.x - blocks[i].x;
-            offsetY = world.y - blocks[i].y;
-
-            lastX = world.x;
-            lastY = world.y;
-
-            dragging = true;
-            dragStarted = false;
-
-            SetCapture(hwnd);
-            return;
+            hitIndex = i;
+            break;
         }
     }
 
-    // ブロックがない場所をクリックしたら選択解除
-    selected = -1;
-    dragging = false;
+    if (hitIndex < 0)
+    {
+        selected = -1;
+        selectedBlocks.clear();
+        dragBlocks.clear();
+
+        dragging = false;
+        dragStarted = false;
+        return;
+    }
+
+    // 複数選択中のブロックをクリックした場合は、
+    // その選択を維持する
+    bool clickedSelectedBlock =
+        std::find(
+            selectedBlocks.begin(),
+            selectedBlocks.end(),
+            hitIndex
+        ) != selectedBlocks.end();
+
+    if (!clickedSelectedBlock)
+    {
+        selected = hitIndex;
+        selectedBlocks.clear();
+    }
+    else
+    {
+        selected = hitIndex;
+    }
+
+    offsetX = world.x - blocks[hitIndex].x;
+    offsetY = world.y - blocks[hitIndex].y;
+
+    lastX = world.x;
+    lastY = world.y;
+
+    dragBlocks.clear();
+
+    if (!selectedBlocks.empty())
+    {
+        // 複数選択したブロックを移動対象にする
+        dragBlocks = selectedBlocks;
+    }
+    else
+    {
+        // 単一選択の場合は選択ブロックと子孫を対象にする
+        dragBlocks.push_back(hitIndex);
+
+        for (size_t i = 0; i < dragBlocks.size(); ++i)
+        {
+            int child = GetChild(dragBlocks[i]);
+
+            if (child >= 0)
+                dragBlocks.push_back(child);
+        }
+    }
+
+    std::sort(dragBlocks.begin(), dragBlocks.end());
+    dragBlocks.erase(
+        std::unique(dragBlocks.begin(), dragBlocks.end()),
+        dragBlocks.end()
+    );
+
+    dragging = true;
     dragStarted = false;
+
+    SetCapture(hwnd);
 }
+
+
 
 void BlockManager::OnMouseMove(int x, int y)
 {
@@ -205,101 +417,95 @@ void BlockManager::OnMouseMove(int x, int y)
 
     if (!dragStarted)
     {
-        // ドラッグ開始前の状態を1回だけ保存
         SaveUndoState();
 
-        parent[selected] = -1;
+        // ドラッグするブロックの親接続を解除する
+        // 単一選択時のみ、従来の接続解除動作を行う
+        if (selectedBlocks.empty())
+            parent[selected] = -1;
+
         dragStarted = true;
     }
 
-    MoveConnectedBlocks(dx, dy);
+    for (int index : dragBlocks)
+    {
+        if (index >= 0 &&
+            index < static_cast<int>(blocks.size()))
+        {
+            blocks[index].x += dx;
+            blocks[index].y += dy;
+        }
+    }
 
     lastX = world.x;
     lastY = world.y;
 }
 
-void BlockManager::OnMouseUp(HWND hwnd)
-{
-    if (dragging && selected >= 0 && dragStarted)
-    {
-        SnapSelectedBlock();
-    }
+
+void BlockManager::OnMouseUp(HWND hwnd) {
+    if (dragging && selected >= 0 && dragStarted) { SnapSelectedBlock(); }
 
     dragging = false;
     dragStarted = false;
 
-    // selected は解除しない
     if (GetCapture() == hwnd)
         ReleaseCapture();
+
+
 }
 
-void BlockManager::MoveConnectedBlocks(int dx, int dy)
-{
-    for (int i = 0;
-         i < static_cast<int>(blocks.size());
-         ++i)
-    {
-        if (i == selected || IsDescendant(i, selected))
-        {
-            blocks[i].x += dx;
-            blocks[i].y += dy;
-        }
-    }
-}
+// ============================================================ 
+// 接続されたブロックの移動 
+// ============================================================
 
-bool BlockManager::IsDescendant(
-    int blockIndex,
-    int ancestorIndex) const
-{
-    if (blockIndex < 0 || ancestorIndex < 0)
-        return false;
+void BlockManager::MoveConnectedBlocks(int dx, int dy) { for (int i = 0; i < static_cast<int>(blocks.size()); ++i) { if (i == selected || IsDescendant(i, selected)) { blocks[i].x += dx; blocks[i].y += dy; } } }
+
+bool BlockManager::IsDescendant(int blockIndex, int ancestorIndex) const {
+    if (blockIndex < 0 || ancestorIndex < 0 || blockIndex >= static_cast<int>(parent.size())) { return false; }
 
     int current = parent[blockIndex];
 
     for (int count = 0;
-         current >= 0 &&
-         count < static_cast<int>(blocks.size());
-         ++count)
+        current >= 0 &&
+        count < static_cast<int>(blocks.size());
+        ++count)
     {
         if (current == ancestorIndex)
             return true;
+
+        if (current >= static_cast<int>(parent.size()))
+            return false;
 
         current = parent[current];
     }
 
     return false;
+
+
 }
 
-bool BlockManager::HasChild(int blockIndex) const
-{
-    for (int i = 0;
-         i < static_cast<int>(parent.size());
-         ++i)
-    {
-        if (parent[i] == blockIndex)
-            return true;
-    }
+bool BlockManager::HasChild(int blockIndex) const {
+    for (int p : parent) { if (p == blockIndex) return true; }
 
     return false;
+
+
 }
 
-int BlockManager::GetChild(int blockIndex) const
-{
-    for (int i = 0;
-         i < static_cast<int>(parent.size());
-         ++i)
-    {
-        if (parent[i] == blockIndex)
-            return i;
-    }
+int BlockManager::GetChild(int blockIndex) const {
+    for (int i = 0; i < static_cast<int>(parent.size()); ++i) { if (parent[i] == blockIndex) return i; }
 
     return -1;
+
+
 }
 
-void BlockManager::SnapSelectedBlock()
-{
-    if (selected < 0)
-        return;
+// ============================================================ 
+// ブロックの接続 
+// ============================================================
+
+void BlockManager::SnapSelectedBlock() {
+    if (selected < 0 || selected >= static_cast<int>(blocks.size())) { return; }
 
     Block& moving = blocks[selected];
 
@@ -308,8 +514,8 @@ void BlockManager::SnapSelectedBlock()
     int bestY = moving.y;
 
     for (int i = 0;
-         i < static_cast<int>(blocks.size());
-         ++i)
+        i < static_cast<int>(blocks.size());
+        ++i)
     {
         if (i == selected)
             continue;
@@ -325,11 +531,8 @@ void BlockManager::SnapSelectedBlock()
         if (std::abs(moving.x - target.x) >= COLUMN_DISTANCE)
             continue;
 
-        int expectedY =
-            target.y + target.h - TAB_HEIGHT;
-
-        int distance =
-            std::abs(moving.y - expectedY);
+        int expectedY = target.y + target.h - TAB_HEIGHT;
+        int distance = std::abs(moving.y - expectedY);
 
         if (distance <= SNAP_DISTANCE &&
             distance < bestDistance)
@@ -342,20 +545,36 @@ void BlockManager::SnapSelectedBlock()
 
     if (bestTarget >= 0)
     {
-        moving.x = blocks[bestTarget].x;
-        moving.y = bestY;
+        int dx = blocks[bestTarget].x - moving.x;
+        int dy = bestY - moving.y;
+
+        for (int i = 0;
+            i < static_cast<int>(blocks.size());
+            ++i)
+        {
+            if (i == selected || IsDescendant(i, selected))
+            {
+                blocks[i].x += dx;
+                blocks[i].y += dy;
+            }
+        }
 
         parent[selected] = bestTarget;
     }
+
+
 }
 
-std::vector<int> BlockManager::GetExecutionOrder() const
-{
+// ============================================================ 
+// 実行順序 
+// ============================================================
+
+std::vector<int> BlockManager::GetExecutionOrder() const {
     std::vector<int> order;
 
     for (int i = 0;
-         i < static_cast<int>(blocks.size());
-         ++i)
+        i < static_cast<int>(blocks.size());
+        ++i)
     {
         if (parent[i] != -1)
             continue;
@@ -366,9 +585,9 @@ std::vector<int> BlockManager::GetExecutionOrder() const
         int current = i;
 
         for (int count = 0;
-             current != -1 &&
-             count < static_cast<int>(blocks.size());
-             ++count)
+            current != -1 &&
+            count < static_cast<int>(blocks.size());
+            ++count)
         {
             order.push_back(current);
             current = GetChild(current);
@@ -376,30 +595,44 @@ std::vector<int> BlockManager::GetExecutionOrder() const
     }
 
     return order;
+
+
 }
 
-const std::vector<Block>& BlockManager::GetBlocks() const
-{
-    return blocks;
-}
+// ============================================================ 
+// ブロック一覧 
+// ============================================================
 
-void BlockManager::AddBlock(
-    BlockType type,
-    int x,
-    int y)
-{
+const std::vector<Block>& BlockManager::GetBlocks() const { return blocks; }
+
+const std::vector<int>& BlockManager::GetParents() const { return parent; }
+
+bool BlockManager::IsDragging() const { return dragging; }
+
+int BlockManager::GetSelectedBlockIndex() const { return selected; }
+
+int BlockManager::GetSelectedBlock() const { return selected; }
+
+// ============================================================ // ブロック追加 // ============================================================
+
+void BlockManager::AddBlock(BlockType type, int x, int y) {
     SaveUndoState();
 
     blocks.push_back({ type, x, y });
     parent.push_back(-1);
+
+
 }
 
-bool BlockManager::DeleteBlockAt(int x, int y)
-{
+// ============================================================ 
+// 指定位置のブロックを削除 
+// ============================================================
+
+bool BlockManager::DeleteBlockAt(int x, int y) {
     int index = -1;
 
     for (int i = static_cast<int>(blocks.size()) - 1;
-         i >= 0; --i)
+        i >= 0; --i)
     {
         if (HitBlock(blocks[i], x, y))
         {
@@ -411,63 +644,62 @@ bool BlockManager::DeleteBlockAt(int x, int y)
     if (index < 0)
         return false;
 
-    SaveUndoState();
+    std::vector<int> targets{ index };
 
-    for (int i = 0;
-         i < static_cast<int>(parent.size());
-         ++i)
+    // 削除したブロックの子孫も削除対象にする
+    for (size_t i = 0; i < targets.size(); ++i)
     {
-        if (parent[i] == index)
-            parent[i] = -1;
+        int current = targets[i];
+
+        for (int j = 0;
+            j < static_cast<int>(parent.size());
+            ++j)
+        {
+            if (parent[j] == current)
+                targets.push_back(j);
+        }
     }
 
-    for (int i = 0;
-         i < static_cast<int>(parent.size());
-         ++i)
-    {
-        if (parent[i] > index)
-            --parent[i];
-    }
-
-    blocks.erase(blocks.begin() + index);
-    parent.erase(parent.begin() + index);
-
-    selected = -1;
-    dragging = false;
-    dragStarted = false;
-
+    DeleteBlocks(targets);
     return true;
+
+
 }
 
-const std::vector<int>& BlockManager::GetParents() const
-{
-    return parent;
-}
+// ============================================================ 
+// ブロックの置き換え 
+// ============================================================
 
-bool BlockManager::ReplaceBlocks(
-    const std::vector<Block>& newBlocks,
-    const std::vector<int>& newParents)
-{
-    if (newBlocks.size() != newParents.size())
-        return false;
+bool BlockManager::ReplaceBlocks(const std::vector<Block>& newBlocks, const std::vector<int>& newParents) {
+    if (newBlocks.size() != newParents.size()) return false;
 
     const int count = static_cast<int>(newBlocks.size());
 
-    // 接続先の範囲を検証
+    std::vector<bool> hasChild(count, false);
+
     for (int i = 0; i < count; ++i)
     {
-        const int p = newParents[i];
+        int p = newParents[i];
 
         if (p < -1 || p >= count || p == i)
             return false;
+
+        if (p != -1)
+        {
+            if (hasChild[p])
+                return false;
+
+            hasChild[p] = true;
+        }
     }
 
-    // 接続の循環を検証
     for (int i = 0; i < count; ++i)
     {
         int current = i;
 
-        for (int steps = 0; current != -1; ++steps)
+        for (int steps = 0;
+            current != -1;
+            ++steps)
         {
             if (steps >= count)
                 return false;
@@ -483,165 +715,420 @@ bool BlockManager::ReplaceBlocks(
     redoStack.clear();
 
     selected = -1;
+    selectedBlocks.clear();
+
     dragging = false;
     dragStarted = false;
+    selectingRange = false;
 
     return true;
+
+
 }
 
-bool BlockManager::IsDragging() const
-{
-    return dragging;
+// ============================================================ 
+// 選択解除 
+// ============================================================
+
+void BlockManager::ClearSelection() {
+    selected = -1; 
+    selectedBlocks.clear();
+
+    dragging = false;
+    dragStarted = false;
+
+
 }
 
-int BlockManager::GetSelectedBlockIndex() const
+void BlockManager::SelectBlock(int index)
 {
-    return selected;
-}
+    if (index < 0 ||
+        index >= static_cast<int>(blocks.size()))
+    {
+        ClearSelection();
+        return;
+    }
 
+    selected = index;
+    selectedBlocks.clear();
 
-int BlockManager::GetSelectedBlock() const
-{
-    return selected;
-}
-
-void BlockManager::ClearSelection()
-{
-    selected = -1;
     dragging = false;
     dragStarted = false;
 }
 
-bool BlockManager::DeleteSelectedBlock()
-{
+// ============================================================ 
+// 選択したブロックを削除 
+// ============================================================
+
+bool BlockManager::DeleteSelectedBlock() {
+    if (!selectedBlocks.empty()) return DeleteSelectedBlocks();
+
     if (selected < 0 ||
         selected >= static_cast<int>(blocks.size()))
     {
         return false;
     }
 
-    int index = selected;
+    DeleteBlocks({ selected });
+    return true;
+
+
+}
+
+// ============================================================ 
+// 複数ブロックをまとめて削除 
+// ============================================================
+
+bool BlockManager::DeleteSelectedBlocks() {
+    if (selectedBlocks.empty()) return false;
+
+    DeleteBlocks(selectedBlocks);
+    return true;
+
+
+}
+
+// ============================================================ 
+// 指定された複数ブロックを削除 
+// ============================================================
+
+void BlockManager::DeleteBlocks(const std::vector<int>& indices) {
+    if (indices.empty()) return;
+
+    std::vector<bool> remove(
+        blocks.size(),
+        false);
+
+    for (int index : indices)
+    {
+        if (index >= 0 &&
+            index < static_cast<int>(blocks.size()))
+        {
+            remove[index] = true;
+        }
+    }
+
+    bool any = false;
+
+    for (bool value : remove)
+    {
+        if (value)
+        {
+            any = true;
+            break;
+        }
+    }
+
+    if (!any)
+        return;
 
     SaveUndoState();
+
+    std::vector<Block> newBlocks;
+    std::vector<int> newParents;
+
+    std::vector<int> indexMap(blocks.size(), -1);
 
     for (int i = 0;
-        i < static_cast<int>(parent.size());
+        i < static_cast<int>(blocks.size());
         ++i)
     {
-        if (parent[i] == index)
-            parent[i] = -1;
-        else if (parent[i] > index)
-            --parent[i];
+        if (!remove[i])
+        {
+            indexMap[i] = static_cast<int>(newBlocks.size());
+            newBlocks.push_back(blocks[i]);
+            newParents.push_back(parent[i]);
+        }
     }
 
-    blocks.erase(blocks.begin() + index);
-    parent.erase(parent.begin() + index);
+    for (int i = 0;
+        i < static_cast<int>(newParents.size());
+        ++i)
+    {
+        int oldParent = newParents[i];
+
+        if (oldParent < 0 ||
+            oldParent >= static_cast<int>(indexMap.size()))
+        {
+            newParents[i] = -1;
+        }
+        else if (remove[oldParent])
+        {
+            newParents[i] = -1;
+        }
+        else
+        {
+            newParents[i] = indexMap[oldParent];
+        }
+    }
+
+    blocks = newBlocks;
+    parent = newParents;
 
     ClearSelection();
-    return true;
+
+
 }
 
-bool BlockManager::CopySelectedBlock()
-{
-    if (selected < 0 ||
-        selected >= static_cast<int>(blocks.size()))
+// ============================================================ 
+// 複数選択 
+// ============================================================
+
+void BlockManager::StartRangeSelection(int x, int y) {
+    selectingRange = true;
+
+    selectionStart = { x, y };
+    selectionEnd = { x, y };
+
+    selected = -1;
+    selectedBlocks.clear();
+
+    dragging = false;
+    dragStarted = false;
+
+
+}
+
+void BlockManager::UpdateRangeSelection(int x, int y) {
+    if (!selectingRange) return;
+
+    selectionEnd = { x, y };
+
+    int left = (std::min)(selectionStart.x, selectionEnd.x);
+    int top = (std::min)(selectionStart.y, selectionEnd.y);
+    int right = (std::max)(selectionStart.x, selectionEnd.x);
+    int bottom = (std::max)(selectionStart.y, selectionEnd.y);
+
+    selectedBlocks.clear();
+
+    // 矩形に交差するブロックをすべて選択
+    for (int i = 0;
+        i < static_cast<int>(blocks.size());
+        ++i)
+    {
+        const Block& block = blocks[i];
+
+        bool intersects =
+            block.x < right &&
+            block.x + block.w > left &&
+            block.y < bottom &&
+            block.y + block.h > top;
+
+        if (intersects)
+            selectedBlocks.push_back(i);
+    }
+
+    selected = selectedBlocks.empty()
+        ? -1
+        : selectedBlocks.front();
+
+
+}
+
+void BlockManager::EndRangeSelection() { selectingRange = false; }
+
+const std::vector<int>& BlockManager::GetSelectedBlocks() const { return selectedBlocks; }
+
+bool BlockManager::IsSelectingRange() const { return selectingRange; }
+
+// ============================================================ 
+// コピー 
+// ============================================================
+
+bool BlockManager::CopySelectedBlock() {
+    std::vector<int> selection;
+
+    if (!selectedBlocks.empty())
+    {
+        selection = selectedBlocks;
+    }
+    else if (selected >= 0 &&
+        selected < static_cast<int>(blocks.size()))
+    {
+        // 単体選択の場合は子孫もコピーする
+        selection.push_back(selected);
+
+        for (size_t i = 0; i < selection.size(); ++i)
+        {
+            int current = selection[i];
+            int child = GetChild(current);
+
+            if (child >= 0)
+                selection.push_back(child);
+        }
+    }
+    else
     {
         return false;
     }
 
-    copiedBlock = blocks[selected];
-    hasCopiedBlock = true;
+    std::sort(selection.begin(), selection.end());
+    selection.erase(
+        std::unique(selection.begin(), selection.end()),
+        selection.end());
 
-    return true;
+    copiedBlocks.clear();
+    copiedParents.clear();
+
+    std::vector<int> indexMap(
+        blocks.size(),
+        -1);
+
+    for (int index : selection)
+    {
+        if (index < 0 ||
+            index >= static_cast<int>(blocks.size()))
+        {
+            continue;
+        }
+
+        indexMap[index] =
+            static_cast<int>(copiedBlocks.size());
+
+        copiedBlocks.push_back(blocks[index]);
+        copiedParents.push_back(-1);
+    }
+
+    // コピー内に両方のブロックが含まれる場合だけ接続を維持
+    for (size_t i = 0; i < selection.size(); ++i)
+    {
+        int oldIndex = selection[i];
+
+        if (oldIndex < 0 ||
+            oldIndex >= static_cast<int>(parent.size()))
+        {
+            continue;
+        }
+
+        int oldParent = parent[oldIndex];
+
+        if (oldParent >= 0 &&
+            oldParent < static_cast<int>(indexMap.size()) &&
+            indexMap[oldParent] >= 0)
+        {
+            copiedParents[i] = indexMap[oldParent];
+        }
+    }
+
+    hasCopiedBlock = !copiedBlocks.empty();
+
+    return hasCopiedBlock;
+
+
 }
 
-bool BlockManager::PasteCopiedBlock(int x, int y)
-{
-    if (!hasCopiedBlock)
-        return false;
+// ============================================================ 
+// 貼り付け 
+// ============================================================
 
-    Block newBlock = copiedBlock;
+bool BlockManager::PasteCopiedBlock(int x, int y) {
+    if (!hasCopiedBlock || copiedBlocks.empty()) return false;
 
-    newBlock.x = x;
-    newBlock.y = y;
+    int dx = x - copiedBlocks[0].x;
+    int dy = y - copiedBlocks[0].y;
 
     SaveUndoState();
 
-    blocks.push_back(newBlock);
-    parent.push_back(-1);
+    int startIndex = static_cast<int>(blocks.size());
 
-    selected = static_cast<int>(blocks.size()) - 1;
+    selectedBlocks.clear();
+
+    for (size_t i = 0; i < copiedBlocks.size(); ++i)
+    {
+        Block newBlock = copiedBlocks[i];
+
+        newBlock.x += dx;
+        newBlock.y += dy;
+
+        blocks.push_back(newBlock);
+
+        int copiedParent = copiedParents[i];
+
+        if (copiedParent >= 0)
+            parent.push_back(startIndex + copiedParent);
+        else
+            parent.push_back(-1);
+
+        selectedBlocks.push_back(
+            static_cast<int>(blocks.size()) - 1);
+    }
+
+    selected = selectedBlocks.empty()
+        ? -1
+        : selectedBlocks.front();
 
     return true;
+
+
 }
 
-// --------------------------------------------------------
-// 操作前の状態を履歴に保存
-// --------------------------------------------------------
-void BlockManager::SaveUndoState()
-{
+// ============================================================ 
+// Undo履歴 
+// ============================================================
+
+void BlockManager::PushUndoState(const BlockState& state) {
+    undoStack.push_back(state);
+
+    if (undoStack.size() > MAX_HISTORY)
+        undoStack.erase(undoStack.begin());
+
+
+}
+
+void BlockManager::SaveUndoState() {
     BlockState state;
+
     state.blocks = blocks;
     state.parent = parent;
 
-    undoStack.push_back(state);
+    PushUndoState(state);
 
-    // 新しい操作を行ったら、やり直し履歴を消す
     redoStack.clear();
 
-    // 履歴は最大100件
-    constexpr size_t MAX_HISTORY = 100;
 
-    if (undoStack.size() > MAX_HISTORY)
-    {
-        undoStack.erase(undoStack.begin());
-    }
 }
 
-// --------------------------------------------------------
-// 元に戻す：Ctrl + Z
-// --------------------------------------------------------
-bool BlockManager::Undo()
-{
-    if (undoStack.empty())
-        return false;
+// ============================================================ 
+// 元に戻す 
+// ============================================================
 
-    // 現在の状態をやり直し履歴へ保存
+bool BlockManager::Undo() {
+    if (undoStack.empty()) return false;
+
     BlockState current;
+
     current.blocks = blocks;
     current.parent = parent;
 
     redoStack.push_back(current);
 
-    // 直前の状態を復元
     BlockState previous = undoStack.back();
     undoStack.pop_back();
 
     blocks = previous.blocks;
     parent = previous.parent;
 
-    // 古い選択インデックスを使わない
     ClearSelection();
 
     return true;
+
+
 }
 
-// --------------------------------------------------------
-// やり直す：Ctrl + Y
-// --------------------------------------------------------
-bool BlockManager::Redo()
-{
-    if (redoStack.empty())
-        return false;
+// ============================================================ 
+// やり直す 
+// ============================================================
 
-    // 現在の状態を元に戻す履歴へ保存
+bool BlockManager::Redo() {
+    if (redoStack.empty()) return false;
+
     BlockState current;
+
     current.blocks = blocks;
     current.parent = parent;
 
-    undoStack.push_back(current);
+    PushUndoState(current);
 
-    // やり直し状態を復元
     BlockState next = redoStack.back();
     redoStack.pop_back();
 
@@ -651,4 +1138,23 @@ bool BlockManager::Redo()
     ClearSelection();
 
     return true;
+}
+
+
+void BlockManager::SelectAllBlocks()
+{
+    selectedBlocks.clear();
+
+    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
+    {
+        selectedBlocks.push_back(i);
+    }
+
+    selected = selectedBlocks.empty()
+        ? -1
+        : selectedBlocks.front();
+
+    dragging = false;
+    dragStarted = false;
+    dragBlocks.clear();
 }
