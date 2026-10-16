@@ -1,14 +1,14 @@
-#pragma once
+﻿#pragma once
 
-#include <windows.h> 
+#include <windows.h>
 #include <vector>
 
 #include "Block.h"
 
 class BlockManager {
-public: 
-    // ======================================================== 
-    // �������E�`�� 
+public:
+    // ========================================================
+    // 初期化・描画
     // ========================================================
 
     void Initialize();
@@ -16,7 +16,7 @@ public:
     void DrawAll(HDC hdc) const;
 
     // ========================================================
-    // �}�E�X����
+    // マウス操作
     // ========================================================
 
     void OnMouseDown(HWND hwnd, int x, int y);
@@ -26,7 +26,7 @@ public:
     void OnMouseUp(HWND hwnd);
 
     // ========================================================
-    // �u���b�N����
+    // ブロック操作
     // ========================================================
 
     void AddBlock(BlockType type, int x, int y);
@@ -35,12 +35,14 @@ public:
 
     const std::vector<Block>& GetBlocks() const;
 
+    bool UpdateBlockAt(int index, const Block& updatedBlock);
+
     const std::vector<int>& GetParents() const;
 
     std::vector<int> GetExecutionOrder() const;
 
     // ========================================================
-    // �폜���[�h
+    // 削除モード
     // ========================================================
 
     void SetDeleteMode(bool enabled);
@@ -48,7 +50,7 @@ public:
     bool IsDeleteMode() const;
 
     // ========================================================
-    // �\���ʒu�E�Y�[��
+    // 表示位置・ズーム
     // ========================================================
 
     void SetViewTransform(
@@ -62,7 +64,7 @@ public:
     POINT WorldToScreen(int x, int y) const;
 
     // ========================================================
-    // �t�@�C���ǂݍ���
+    // ファイル読み込み
     // ========================================================
 
     bool ReplaceBlocks(
@@ -71,7 +73,7 @@ public:
     );
 
     // ========================================================
-    // �I�����
+    // 選択操作
     // ========================================================
 
     bool IsDragging() const;
@@ -87,26 +89,26 @@ public:
     void ClearSelection();
 
     // ========================================================
-    // �R�s�[�E�\��t���E�폜
+    // コピー・貼り付け・削除
     // ========================================================
 
-    // �I�������u���b�N�A�܂��͕����I�������u���b�N���R�s�[
+    // 選択中のブロック、または複数選択したブロックをコピーする
     bool CopySelectedBlock();
 
-    // �R�s�[�����u���b�N��\��t��
+    // コピーしたブロックを指定位置に貼り付ける
     bool PasteCopiedBlock(int x, int y);
 
-    // �I�������u���b�N�A�܂��͕����I�������u���b�N���폜
+    // 選択中のブロック、または複数選択したブロックを削除する
     bool DeleteSelectedBlock();
 
-    // �����u���b�N���܂Ƃ߂č폜
+    // 複数選択したブロックをまとめて削除する
     bool DeleteSelectedBlocks();
 
-    // �w�肳�ꂽ�u���b�N���܂Ƃ߂č폜�����������
+    // 指定されたインデックスのブロックをまとめて削除する
     void DeleteBlocks(const std::vector<int>& indices);
 
     // ========================================================
-    // Undo / Redo
+    // Undo / Redo（操作の取り消し・やり直し）
     // ========================================================
 
     bool Undo();
@@ -114,7 +116,7 @@ public:
     bool Redo();
 
     // ========================================================
-    // �͈͑I��
+    // 範囲選択
     // ========================================================
 
     void StartRangeSelection(int x, int y);
@@ -127,85 +129,106 @@ public:
 
     bool IsSelectingRange() const;
 
-
-private: 
-    // �h���b�O�J�n���Ɉړ��Ώۂ�ۑ�
+private:
+    // ドラッグ開始時に移動対象となるブロックのインデックスを保存する
     std::vector<int> dragBlocks;
 
+    // 管理しているすべてのブロック
     std::vector<Block> blocks;
 
-    // parent[i] �̓u���b�N i �̐e�u���b�N�̃C���f�b�N�X
-    // -1 �͐e�u���b�N�Ȃ�
+    // parent[i] はブロック i の親ブロックのインデックス
+    // -1 は親ブロックが存在しないことを表す
     std::vector<int> parent;
 
-    // �P��I�����̃u���b�N�C���f�b�N�X
+    // 単一選択中のブロックのインデックス
     int selected = -1;
 
-    // �͈͑I�����̕����u���b�N�̃C���f�b�N�X
+    // 範囲選択中のブロックのインデックス一覧
     std::vector<int> selectedBlocks;
 
+    // ドラッグ開始位置からの X 方向のオフセット
     int offsetX = 0;
 
+    // ドラッグ開始位置からの Y 方向のオフセット
     int offsetY = 0;
 
+    // 前回のマウス位置
     int lastX = 0;
 
     int lastY = 0;
 
+    // ドラッグ中かどうか
     bool dragging = false;
 
+    // ドラッグが実際に開始されたかどうか
     bool dragStarted = false;
 
-    // �폜���[�h
+    // 削除モードが有効かどうか
     bool deleteMode = false;
 
+    // ズーム倍率
     float zoom = 1.0f;
 
+    // 表示位置のオフセット
     float viewX = 350.0f;
 
     float viewY = 0.0f;
 
+    // 範囲選択中かどうか
     bool selectingRange = false;
 
+    // 範囲選択の開始位置と終了位置
     POINT selectionStart = { 0, 0 };
 
     POINT selectionEnd = { 0, 0 };
 
+    // コピーしたブロック
     std::vector<Block> copiedBlocks;
 
-    // �R�s�[�����u���b�N���m�̐ڑ��֌W
-    // �R�s�[���̃C���f�b�N�X�ŊǗ�����
+    // コピーしたブロック間の接続関係を保存する
+    // コピー後のブロックのインデックスで管理する
     std::vector<int> copiedParents;
 
+    // コピー済みのブロックが存在するかどうか
     bool hasCopiedBlock = false;
 
+    // Undo / Redo 用のブロック状態
     struct BlockState
     {
+        // ブロック一覧
         std::vector<Block> blocks;
 
+        // ブロック間の親子関係
         std::vector<int> parent;
     };
 
+    // 操作を取り消すための状態履歴
     std::vector<BlockState> undoStack;
 
+    // 取り消した操作をやり直すための状態履歴
     std::vector<BlockState> redoStack;
 
+    // 指定したブロックが祖先ブロックの子孫かどうかを判定する
     bool IsDescendant(
         int blockIndex,
         int ancestorIndex
     ) const;
 
+    // 指定したブロックに子ブロックがあるか判定する
     bool HasChild(int blockIndex) const;
 
+    // 指定したブロックの子ブロックのインデックスを取得する
     int GetChild(int blockIndex) const;
 
+    // 接続されているブロックをまとめて移動する
     void MoveConnectedBlocks(int dx, int dy);
 
+    // 選択中のブロックを接続可能な位置に吸着させる
     void SnapSelectedBlock();
 
+    // Undo 履歴に状態を追加する
     void PushUndoState(const BlockState& state);
 
+    // 現在の状態を Undo 履歴に保存する
     void SaveUndoState();
-
-
 };
