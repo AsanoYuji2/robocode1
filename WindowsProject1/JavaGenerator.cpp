@@ -178,7 +178,7 @@ bool ExportJava(const std::vector<Block>& blocks)
     file << code;
     file.close();
 
-    MessageBoxA(nullptr, "4. Java file written successfully!", "Debug", MB_OK);
+    MessageBoxA(nullptr, "4. Javaファイルが正常に書き込まれました", "Debug", MB_OK);
 
     // コンパイル用バッチファイルの作成と実行
     const std::string root = "C:\\robocode";
@@ -207,7 +207,7 @@ bool ExportJava(const std::vector<Block>& blocks)
     std::ifstream logFile(logPath);
     std::string output((std::istreambuf_iterator<char>(logFile)), std::istreambuf_iterator<char>());
     if (output.empty()) {
-        output = (result == 0) ? "Compile finished successfully!" : "Compilation failed with unknown error.";
+        output = (result == 0) ? "コンパイルが終了しました" : "コンパイルエラーです";
     }
 
     MessageBoxA(nullptr, output.c_str(), "javac Result", MB_OK);
