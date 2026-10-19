@@ -67,6 +67,27 @@ COLORREF GetBlockColor(BlockType type)
 
 
 // ============================================================
+// ブロックを光らせるための明るい色
+// ============================================================
+
+static COLORREF GetBrightBlockColor(BlockType type)
+{
+    COLORREF color = GetBlockColor(type);
+
+    int r = GetRValue(color);
+    int g = GetGValue(color);
+    int b = GetBValue(color);
+
+    // 元の色を白に近づけて明るくする
+    r = r + (255 - r) * 50 / 100;
+    g = g + (255 - g) * 50 / 100;
+    b = b + (255 - b) * 50 / 100;
+
+    return RGB(r, g, b);
+}
+
+
+// ============================================================
 // 条件名
 // ============================================================
 
@@ -331,15 +352,22 @@ bool HitBlock(const Block& b, int x, int y)
 // ブロック描画
 // ============================================================
 
-void DrawBlock(HDC hdc, const Block& b)
+void DrawBlock(HDC hdc, const Block& b, bool glowing)
 {
     if (!hdc)
         return;
 
     const int tabH = 8;
 
-    HBRUSH brush =
-        CreateSolidBrush(GetBlockColor(b.type));
+
+    // ホバー中なら明るい色、通常時ならカテゴリー色
+    COLORREF blockColor = glowing
+        ? GetBrightBlockColor(b.type)
+        : GetBlockColor(b.type);
+
+    HBRUSH brush = CreateSolidBrush(blockColor);
+
+
 
     if (!brush)
         return;

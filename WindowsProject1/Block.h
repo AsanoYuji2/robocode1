@@ -201,7 +201,7 @@ std::wstring GetBlockName(BlockType type);
 
 bool HitBlock(const Block& block, int x, int y);
 
-void DrawBlock(HDC hdc, const Block& block);
+void DrawBlock(HDC hdc, const Block& block, bool glowing = false);
 
 // ============================================================
 // ブロック列の実行

@@ -161,6 +161,10 @@ private:
 
     int lastY = 0;
 
+    int mouseX = -1;
+
+    int mouseY = -1;
+
     // ドラッグ中かどうか
     bool dragging = false;
 
