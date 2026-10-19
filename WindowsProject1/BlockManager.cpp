@@ -12,7 +12,8 @@ namespace { constexpr int SNAP_DISTANCE = 24; constexpr int COLUMN_DISTANCE = 35
 // ============================================================
 
 void BlockManager::Initialize() {
-    blocks.clear(); parent.clear();
+    blocks.clear();
+    parent.clear();
 
     undoStack.clear();
     redoStack.clear();
@@ -21,9 +22,10 @@ void BlockManager::Initialize() {
     copiedParents.clear();
     hasCopiedBlock = false;
 
+    // 初期ブロック
     blocks.push_back({ BlockType::Move, 100, 120 });
-    blocks.push_back({ BlockType::Turn, 100, 220 });
-    blocks.push_back({ BlockType::Fire, 100, 320 });
+    blocks.push_back({ BlockType::TurnRight, 100, 220 });
+    blocks.push_back({ BlockType::FireBullet, 100, 320 });
 
     parent.assign(blocks.size(), -1);
 
@@ -42,10 +44,8 @@ void BlockManager::Initialize() {
     viewX = 350.0f;
     viewY = 0.0f;
 
-    // マウスカーソル位置の初期化
     mouseX = -1;
     mouseY = -1;
-
 }
 
 // ============================================================ 

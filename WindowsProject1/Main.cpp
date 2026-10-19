@@ -121,13 +121,13 @@ enum class BlockCategory
     Move,
     Control,
     Variables,
-    Other,
     Function,
     Event,
-    rotate,
+    Rotate,
     Color,
     Information,
     System,
+    Other,
     Count
 };
 
@@ -155,11 +155,15 @@ const wchar_t* const CATEGORY_NAMES[CATEGORY_COUNT] =
 const COLORREF CATEGORY_COLORS[CATEGORY_COUNT] =
 {
     RGB(65, 150, 230),   // 移動
-    RGB(235, 165, 45),   // アクション
-    RGB(225, 185, 45),   // 制御
-    RGB(220, 90, 150),   // 変数
+    RGB(235, 165, 45),   // 制御
+    RGB(225, 185, 45),   // 変数
+    RGB(220, 90, 150),   // 関数
     RGB(50, 190, 190),   // イベント
-    RGB(120, 120, 130)   // その他
+    RGB(120, 120, 130),  // 旋回
+    RGB(220, 90, 90),    // 色を変更
+    RGB(100, 170, 110),  // 情報
+    RGB(130, 100, 200),  // システム
+    RGB(100, 100, 100)   // その他
 };
 
 // カテゴリボタン
@@ -204,37 +208,32 @@ void UpdateView()
 // カテゴリ別のブロック一覧
 // ============================================================
 
-std::vector<BlockType> GetBlockTypes(
-    BlockCategory category)
+std::vector<BlockType> GetBlockTypes(BlockCategory category)
 {
     switch (category)
     {
     case BlockCategory::Move:
-        return
-        {
+        return {
             BlockType::Move,
-            BlockType::Turn,
-            BlockType::TurnLeft,
+            BlockType::MoveBackward,
             BlockType::MoveRight,
             BlockType::MoveLeft,
-            BlockType::Bark
+            BlockType::GetAwayFromWall
         };
 
     case BlockCategory::Control:
-        return
-        {
-            BlockType::Fire,
+        return {
             BlockType::Repeat,
             BlockType::EndRepeat,
             BlockType::Wait,
             BlockType::If,
             BlockType::Else,
-            BlockType::EndIf
+            BlockType::EndIf,
+            BlockType::DoNothing
         };
 
     case BlockCategory::Variables:
-        return
-        {
+        return {
             BlockType::CreateVariable,
             BlockType::SetVariable,
             BlockType::ChangeVariable,
@@ -243,7 +242,82 @@ std::vector<BlockType> GetBlockTypes(
             BlockType::SetBoolean
         };
 
+    case BlockCategory::Function:
+        return {
+            BlockType::KeepAwayRadarFire,
+            BlockType::BodyBlowFire,
+            BlockType::SmartFire,
+            BlockType::TurnBodyToEnemy,
+            BlockType::TurnGunToEnemy,
+            BlockType::HesitateNextBullet,
+            BlockType::VictoryDance,
+            BlockType::VictorySpin,
+            BlockType::ForwardBackwardGun360,
+            BlockType::ZigzagMove
+        };
+
+    case BlockCategory::Event:
+        // イベントは RobotEventManager 側で管理されています。
+        // 現状の BlockType にはイベント専用ブロックがありません。
+        return {};
+
+    case BlockCategory::Rotate:
+        return {
+            BlockType::TurnRight,
+            BlockType::TurnLeft,
+            BlockType::TurnGunRight,
+            BlockType::TurnGunLeft,
+            BlockType::TurnRadarRight,
+            BlockType::TurnRadarLeft
+        };
+
+    case BlockCategory::Color:
+        return {
+            BlockType::SetBodyColor,
+            BlockType::SetGunColor,
+            BlockType::SetRadarColor,
+            BlockType::SetBulletColor,
+            BlockType::SetScanColor
+        };
+
+    case BlockCategory::Information:
+        return {
+            BlockType::GetName,
+            BlockType::GetX,
+            BlockType::GetY,
+            BlockType::GetEnergy,
+            BlockType::GetHeading,
+            BlockType::GetGunHeading,
+            BlockType::GetRadarHeading,
+            BlockType::GetGunCoolingRate,
+            BlockType::GetGunHeat,
+            BlockType::GetVelocity,
+            BlockType::GetOthers,
+            BlockType::GetBattleFieldHeight,
+            BlockType::GetBattleFieldWidth,
+            BlockType::GetHeight,
+            BlockType::GetWidth,
+            BlockType::GetNumRounds,
+            BlockType::GetRoundNum,
+            BlockType::GetTime
+        };
+
+    case BlockCategory::System:
+        return {
+            BlockType::Stop,
+            BlockType::Resume,
+            BlockType::SetAdjustGunForRobotTurn,
+            BlockType::SetAdjustRadarForRobotTurn,
+            BlockType::SetAdjustRadarForGunTurn
+        };
+
     case BlockCategory::Other:
+        return {
+            BlockType::FireBullet,
+             BlockType::FireBulletAndGetResult,
+            BlockType::Scan
+        };
+
     default:
         return {};
     }
@@ -946,20 +1020,87 @@ bool LoadProject(HWND hwnd)
 std::wstring GetNumericPrefix(const Block& block, int& field)
 {
     field = 0;
+
     switch (block.type)
     {
-    case BlockType::Move:      field = 1; return L"前進する ";
-    case BlockType::MoveRight: field = 1; return L"右に移動 ";
-    case BlockType::MoveLeft:  field = 1; return L"左に移動 ";
-    case BlockType::Bark:      field = 1; return L"後退する ";
-    case BlockType::Repeat:    field = 2; return L"繰り返す ";
-    case BlockType::Wait:      field = 3; return L"指定秒数待つ ";
-    case BlockType::CreateVariable: field = 5; return L"変数をつくる " + block.variableName + L" = ";
-    case BlockType::SetVariable:    field = 5; return block.variableName + L" に ";
-    case BlockType::ChangeVariable: field = 5; return block.variableName + L" を ";
-    case BlockType::AddVariable:    field = 5; return block.variableName + L" に ";
-    case BlockType::SubtractVariable:field = 5; return block.variableName + L" から ";
-    default: return L"";
+    case BlockType::Move:
+        field = 1;
+        return L"前進する ";
+
+    case BlockType::MoveBackward:
+        field = 1;
+        return L"後退する ";
+
+    case BlockType::MoveRight:
+        field = 1;
+        return L"右に移動 ";
+
+    case BlockType::MoveLeft:
+        field = 1;
+        return L"左に移動 ";
+
+    case BlockType::TurnRight:
+        field = 6;
+        return L"右に旋回 ";
+
+    case BlockType::TurnLeft:
+        field = 6;
+        return L"左に旋回 ";
+
+    case BlockType::TurnGunRight:
+        field = 6;
+        return L"砲塔を右に旋回 ";
+
+    case BlockType::TurnGunLeft:
+        field = 6;
+        return L"砲塔を左に旋回 ";
+
+    case BlockType::TurnRadarRight:
+        field = 6;
+        return L"レーダーを右に旋回 ";
+
+    case BlockType::TurnRadarLeft:
+        field = 6;
+        return L"レーダーを左に旋回 ";
+
+    case BlockType::Repeat:
+        field = 2;
+        return L"繰り返す ";
+
+    case BlockType::Wait:
+        field = 3;
+        return L"指定秒数待つ ";
+
+    case BlockType::FireBullet:
+        field = 7;
+        return L"弾を撃つ 威力 ";
+
+    case BlockType::CreateVariable:
+        field = 5;
+        return L"変数をつくる " + block.variableName + L" = ";
+
+    case BlockType::SetVariable:
+        field = 5;
+        return block.variableName + L" に ";
+
+    case BlockType::ChangeVariable:
+        field = 5;
+        return block.variableName + L" を ";
+
+    case BlockType::AddVariable:
+        field = 5;
+        return block.variableName + L" に ";
+
+    case BlockType::SubtractVariable:
+        field = 5;
+        return block.variableName + L" から ";
+
+    case BlockType::If:
+        field = 4;
+        return L"もし条件値が ";
+
+    default:
+        return L"";
     }
 }
 
@@ -998,22 +1139,70 @@ void FinishNumericEdit(HWND hwnd, bool commit)
         if (g_numericEditBlockIndex < static_cast<int>(blocks.size()))
         {
             Block updated = blocks[g_numericEditBlockIndex];
+
             if (g_numericEditField == 3)
             {
+                // 待機時間：小数対応
                 double value = wcstod(buffer, &end);
-                if (end != buffer && *end == L'\0' && std::isfinite(value) && value >= 0.0 && value <= 100000.0)
+
+                if (end != buffer &&
+                    *end == L'\0' &&
+                    std::isfinite(value) &&
+                    value >= 0.0 &&
+                    value <= 100000.0)
+                {
                     updated.waitSeconds = value;
+                }
+            }
+            else if (g_numericEditField == 6)
+            {
+                // 旋回角度：degrees に保存
+                double value = wcstod(buffer, &end);
+
+                if (end != buffer &&
+                    *end == L'\0' &&
+                    std::isfinite(value) &&
+                    value >= 0.0 &&
+                    value <= 360000.0)
+                {
+                    updated.degrees = value;
+                }
+            }
+            else if (g_numericEditField == 7)
+            {
+                // 弾の威力：power に保存
+                double value = wcstod(buffer, &end);
+
+                if (end != buffer &&
+                    *end == L'\0' &&
+                    std::isfinite(value) &&
+                    value >= 0.0 &&
+                    value <= 100000.0)
+                {
+                    updated.power = value;
+                }
             }
             else
             {
                 long value = wcstol(buffer, &end, 10);
-                if (end != buffer && *end == L'\0' && value >= 0 && value <= 1000000)
+
+                if (end != buffer &&
+                    *end == L'\0' &&
+                    value >= 0 &&
+                    value <= 1000000)
                 {
-                    if (g_numericEditField == 1) updated.distance = static_cast<int>(value);
-                    else if (g_numericEditField == 2) updated.repeatCount = static_cast<int>(value);
-                    else if (g_numericEditField == 5) updated.value = static_cast<int>(value);
+                    if (g_numericEditField == 1)
+                        updated.distance = static_cast<int>(value);
+                    else if (g_numericEditField == 2)
+                        updated.repeatCount = static_cast<int>(value);
+                    else if (g_numericEditField == 4)
+                        updated.conditionValue = static_cast<int>(value);
+                    else if (g_numericEditField == 5)
+                        updated.value = static_cast<int>(value);
                 }
             }
+
+
             g_manager.UpdateBlockAt(g_numericEditBlockIndex, updated);
         }
     }
@@ -1059,10 +1248,21 @@ bool TryStartNumericEdit(HWND hwnd, POINT screenPoint, POINT worldPoint)
 
         if (g_numericEdit) FinishNumericEdit(hwnd, true);
         std::wstring initial;
-        if (field == 1) initial = std::to_wstring(block.distance);
-        else if (field == 2) initial = std::to_wstring(block.repeatCount);
-        else if (field == 3) initial = std::to_wstring(block.waitSeconds);
-        else initial = std::to_wstring(block.value);
+
+        if (field == 1)
+            initial = std::to_wstring(block.distance);
+        else if (field == 2)
+            initial = std::to_wstring(block.repeatCount);
+        else if (field == 3)
+            initial = std::to_wstring(block.waitSeconds);
+        else if (field == 6)
+            initial = std::to_wstring(block.degrees);
+        else if (field == 7)
+            initial = std::to_wstring(block.power);
+        else if (field == 4)
+            initial = std::to_wstring(block.conditionValue);
+        else
+            initial = std::to_wstring(block.value);
 
         g_numericEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", initial.c_str(),
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,

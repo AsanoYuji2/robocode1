@@ -14,25 +14,94 @@
 // ============================================================
 
 #define BLOCK_TYPE_LIST(X) \
-    X(Move)                \
-    X(Turn)                \
-    X(TurnLeft)            \
-    X(MoveRight)           \
-    X(MoveLeft)            \
-    X(Fire)                \
-    X(Bark)                \
-    X(Repeat)              \
-    X(EndRepeat)           \
-    X(Wait)                \
-    X(If)                  \
-    X(Else)                \
-    X(EndIf)               \
-    X(CreateVariable)      \
-    X(SetVariable)         \
-    X(ChangeVariable)      \
-    X(AddVariable)         \
-    X(SubtractVariable)    \
-    X(SetBoolean)
+    /* 移動系 */    \
+    X(Move)         \
+    X(MoveRight)    \
+    X(MoveLeft)     \
+    X(MoveBackward) \
+    X(TurnRight)    \
+    X(TurnLeft)     \
+    X(Stop)         \
+    X(Resume)       \
+    \
+    /* 砲塔・レーダー系 */ \
+    X(TurnGunRight) \
+    X(TurnGunLeft) \
+    X(TurnRadarRight) \
+    X(TurnRadarLeft) \
+    X(SetAdjustGunForRobotTurn) \
+    X(SetAdjustRadarForRobotTurn) \
+    X(SetAdjustRadarForGunTurn) \
+    \
+    /* 攻撃系 */ \
+    X(FireBullet) \
+    \
+    /* 待機・制御系 */ \
+    X(DoNothing) \
+    X(Wait) \
+    \
+    /* 繰り返し・条件分岐系 */ \
+    X(Repeat) \
+    X(EndRepeat) \
+    X(If) \
+    X(Else) \
+    X(EndIf) \
+    \
+    /* 変数系 */ \
+    X(CreateVariable) \
+    X(SetVariable) \
+    X(ChangeVariable) \
+    X(AddVariable) \
+    X(SubtractVariable) \
+    X(SetBoolean) \
+    \
+    /* 戦闘ロジック系 */ \
+    X(KeepAwayRadarFire) \
+    X(BodyBlowFire) \
+    X(SmartFire) \
+    X(GetAwayFromWall) \
+    X(TurnBodyToEnemy) \
+    X(TurnGunToEnemy) \
+    X(HesitateNextBullet) \
+    \
+    /* 勝利時の動作 */ \
+    X(VictoryDance) \
+    X(VictorySpin) \
+    \
+    /* 色変更系 */ \
+    X(SetBodyColor) \
+    X(SetGunColor) \
+    X(SetRadarColor) \
+    X(SetBulletColor) \
+    X(SetScanColor) \
+    \
+    /* ゲーム情報取得系 */ \
+    X(GetName) \
+    X(GetX) \
+    X(GetY) \
+    X(GetEnergy) \
+    X(GetHeading) \
+    X(GetGunHeading) \
+    X(GetRadarHeading) \
+    X(GetGunCoolingRate) \
+    X(GetGunHeat) \
+    X(GetVelocity) \
+    X(GetOthers) \
+    X(GetBattleFieldHeight) \
+    X(GetBattleFieldWidth) \
+    X(GetHeight) \
+    X(GetWidth) \
+    X(GetNumRounds) \
+    X(GetRoundNum) \
+    X(GetTime)     \
+    \
+    /* 特殊行動系 */\
+    X(FireBulletAndGetResult)\
+    X(Scan)\
+    \
+    /* 関数系 */\
+    X(ForwardBackwardGun360)\
+    X(ZigzagMove)\
 
 // ============================================================
 // ブロックの種類
@@ -97,7 +166,16 @@ enum class RobotEvent
     EnemyDetected,
     Damaged,
     Hit,
-    Collision
+    Collision,
+    WallHit,
+    BulletHit,
+    BulletMissed,
+    BulletHitBullet,
+    Death,
+    HitByBullet,
+    HitRobot,
+    RobotDeath,
+    Win
 };
 
 // ============================================================
@@ -108,6 +186,28 @@ enum class VariableType
 {
     Number,
     Boolean
+};
+
+enum class RobotInfoType
+{
+    Name,
+    X,
+    Y,
+    Energy,
+    Heading,
+    GunHeading,
+    RadarHeading,
+    GunCoolingRate,
+    GunHeat,
+    Velocity,
+    Others,
+    BattleFieldHeight,
+    BattleFieldWidth,
+    Height,
+    Width,
+    NumRounds,
+    RoundNum,
+    Time
 };
 
 // ============================================================
@@ -156,6 +256,22 @@ struct Block
 
     // 真偽値変数名
     std::wstring booleanVariableName = L"flag";
+
+    // 旋回角度
+    double degrees = 0.0;
+
+    // 取得するゲーム情報
+    RobotInfoType infoType = RobotInfoType::Energy;
+
+    // 砲弾の威力
+    double power = 1.0;
+
+    // 色設定（RGB）
+    COLORREF bodyColor = RGB(0, 0, 255);
+    COLORREF gunColor = RGB(255, 0, 0);
+    COLORREF radarColor = RGB(0, 255, 0);
+    COLORREF bulletColor = RGB(255, 255, 0);
+    COLORREF scanColor = RGB(255, 255, 255);
 };
 
 // ============================================================

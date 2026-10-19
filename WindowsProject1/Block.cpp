@@ -26,33 +26,57 @@ const std::vector<BlockType>& GetAvailableBlockTypes()
 // ブロックの色
 // ============================================================
 
+
 COLORREF GetBlockColor(BlockType type)
 {
     switch (type)
     {
-        // 移動の項目
+        // 移動・旋回系
     case BlockType::Move:
-    case BlockType::Turn:
-    case BlockType::TurnLeft:
     case BlockType::MoveRight:
     case BlockType::MoveLeft:
-    case BlockType::Bark:
+    case BlockType::MoveBackward:
+    case BlockType::TurnRight:
+    case BlockType::TurnLeft:
+    case BlockType::Stop:
+    case BlockType::Resume:
+    case BlockType::GetAwayFromWall:
+    case BlockType::TurnBodyToEnemy:
+    case BlockType::HesitateNextBullet:
         return RGB(52, 120, 212);
 
-        // アクション
-    case BlockType::Fire:
+        // 砲塔・レーダー系
+    case BlockType::TurnGunRight:
+    case BlockType::TurnGunLeft:
+    case BlockType::TurnRadarRight:
+    case BlockType::TurnRadarLeft:
+    case BlockType::SetAdjustGunForRobotTurn:
+    case BlockType::SetAdjustRadarForRobotTurn:
+    case BlockType::SetAdjustRadarForGunTurn:
+    case BlockType::TurnGunToEnemy:
+        return RGB(80, 100, 200);
+
+        // 攻撃系
+    case BlockType::FireBullet:
+    case BlockType::KeepAwayRadarFire:
+    case BlockType::BodyBlowFire:
+    case BlockType::SmartFire:
         return RGB(218, 133, 39);
 
-        // 制御
-    case BlockType::EndRepeat:
-    case BlockType::Repeat:
+        // 待機・制御系
+    case BlockType::DoNothing:
     case BlockType::Wait:
+        return RGB(100, 150, 150);
+
+        // 繰り返し・条件分岐系
+    case BlockType::Repeat:
+    case BlockType::EndRepeat:
     case BlockType::If:
     case BlockType::Else:
     case BlockType::EndIf:
         return RGB(220, 154, 40);
 
-        // 変数
+        // 変数系
     case BlockType::CreateVariable:
     case BlockType::SetVariable:
     case BlockType::ChangeVariable:
@@ -60,10 +84,55 @@ COLORREF GetBlockColor(BlockType type)
     case BlockType::SubtractVariable:
     case BlockType::SetBoolean:
         return RGB(190, 70, 120);
+
+        // 勝利時の動作
+    case BlockType::VictoryDance:
+    case BlockType::VictorySpin:
+        return RGB(200, 170, 40);
+
+        // 色変更系
+    case BlockType::SetBodyColor:
+    case BlockType::SetGunColor:
+    case BlockType::SetRadarColor:
+    case BlockType::SetBulletColor:
+    case BlockType::SetScanColor:
+        return RGB(150, 100, 180);
+
+        // ゲーム情報取得系
+    case BlockType::GetName:
+    case BlockType::GetX:
+    case BlockType::GetY:
+    case BlockType::GetEnergy:
+    case BlockType::GetHeading:
+    case BlockType::GetGunHeading:
+    case BlockType::GetRadarHeading:
+    case BlockType::GetGunCoolingRate:
+    case BlockType::GetGunHeat:
+    case BlockType::GetVelocity:
+    case BlockType::GetOthers:
+    case BlockType::GetBattleFieldHeight:
+    case BlockType::GetBattleFieldWidth:
+    case BlockType::GetHeight:
+    case BlockType::GetWidth:
+    case BlockType::GetNumRounds:
+    case BlockType::GetRoundNum:
+    case BlockType::GetTime:
+        return RGB(60, 150, 90);
+
+        // 特殊行動系
+    case BlockType::FireBulletAndGetResult:
+    case BlockType::Scan:
+        return RGB(180, 100, 50);
+
+        // 関数系
+    case BlockType::ForwardBackwardGun360:
+    case BlockType::ZigzagMove:
+        return RGB(120, 80, 180);
     }
 
     return RGB(100, 100, 100);
 }
+
 
 
 // ============================================================
@@ -190,11 +259,17 @@ std::wstring GetBlockName(const Block& b)
         return L"前進する  " +
             std::to_wstring(b.distance) + L" 歩";
 
-    case BlockType::Turn:
-        return L"右に旋回 90 度";
+    case BlockType::MoveBackward:
+        return L"後退する " +
+            std::to_wstring(b.distance) + L" 歩";
+
+    case BlockType::TurnRight:
+        return L"右に旋回 " +
+            std::to_wstring(b.degrees) + L" 度";
 
     case BlockType::TurnLeft:
-        return L"左に旋回 90 度";
+        return L"左に旋回 " +
+            std::to_wstring(b.degrees) + L" 度";
 
     case BlockType::MoveRight:
         return L"右に移動  " +
@@ -204,12 +279,9 @@ std::wstring GetBlockName(const Block& b)
         return L"左に移動  " +
             std::to_wstring(b.distance) + L" 歩";
 
-    case BlockType::Fire:
-        return L"弾を発射 威力2";
-
-    case BlockType::Bark:
-        return L"後退する  " +
-            std::to_wstring(b.distance) + L" 歩";
+    case BlockType::FireBullet:
+        return L"弾を発射 威力 " +
+            std::to_wstring(b.power);
 
     case BlockType::Repeat:
         return L"繰り返す  " +
@@ -318,6 +390,156 @@ std::wstring GetBlockName(const Block& b)
             (b.booleanValue
                 ? L" = 真（TRUE）"
                 : L" = 偽（FALSE）");
+
+
+        // 停止・再開
+    case BlockType::Stop:
+        return L"ロボットを停止";
+
+    case BlockType::Resume:
+        return L"ロボットを再開";
+
+    case BlockType::DoNothing:
+        return L"何もしない";
+
+        // 砲塔・レーダー
+    case BlockType::TurnGunRight:
+        return L"砲塔を右に " +
+            std::to_wstring(b.degrees) + L" 度旋回";
+
+    case BlockType::TurnGunLeft:
+        return L"砲塔を左に " +
+            std::to_wstring(b.degrees) + L" 度旋回";
+
+    case BlockType::TurnRadarRight:
+        return L"レーダーを右に " +
+            std::to_wstring(b.degrees) + L" 度旋回";
+
+    case BlockType::TurnRadarLeft:
+        return L"レーダーを左に " +
+            std::to_wstring(b.degrees) + L" 度旋回";
+
+    case BlockType::SetAdjustGunForRobotTurn:
+        return L"車体旋回時に砲塔を独立させる";
+
+    case BlockType::SetAdjustRadarForRobotTurn:
+        return L"車体旋回時にレーダーを独立させる";
+
+    case BlockType::SetAdjustRadarForGunTurn:
+        return L"砲塔旋回時にレーダーを独立させる";
+
+        // 戦闘ロジック
+    case BlockType::KeepAwayRadarFire:
+        return L"敵を追跡して攻撃";
+
+    case BlockType::BodyBlowFire:
+        return L"敵に接近して攻撃";
+
+    case BlockType::SmartFire:
+        return L"距離に応じて弾の威力を変更";
+
+    case BlockType::GetAwayFromWall:
+        return L"壁から離れる";
+
+    case BlockType::TurnBodyToEnemy:
+        return L"車体を敵に向ける";
+
+    case BlockType::TurnGunToEnemy:
+        return L"砲塔を敵に向ける";
+
+    case BlockType::HesitateNextBullet:
+        return L"敵の弾を避ける";
+
+        // 勝利時の動作
+    case BlockType::VictoryDance:
+        return L"勝利のダンス";
+
+    case BlockType::VictorySpin:
+        return L"勝利時に回転";
+
+        // 色変更
+    case BlockType::SetBodyColor:
+        return L"本体の色を変更";
+
+    case BlockType::SetGunColor:
+        return L"砲塔の色を変更";
+
+    case BlockType::SetRadarColor:
+        return L"レーダーの色を変更";
+
+    case BlockType::SetBulletColor:
+        return L"弾の色を変更";
+
+    case BlockType::SetScanColor:
+        return L"索敵の色を変更";
+
+        // ゲーム情報取得
+    case BlockType::GetName:
+        return L"ロボット名を取得";
+
+    case BlockType::GetX:
+        return L"X座標を取得";
+
+    case BlockType::GetY:
+        return L"Y座標を取得";
+
+    case BlockType::GetEnergy:
+        return L"エネルギーを取得";
+
+    case BlockType::GetHeading:
+        return L"車体の向きを取得";
+
+    case BlockType::GetGunHeading:
+        return L"砲塔の向きを取得";
+
+    case BlockType::GetRadarHeading:
+        return L"レーダーの向きを取得";
+
+    case BlockType::GetGunCoolingRate:
+        return L"砲塔の冷却速度を取得";
+
+    case BlockType::GetGunHeat:
+        return L"砲塔の温度を取得";
+
+    case BlockType::GetVelocity:
+        return L"速度を取得";
+
+    case BlockType::GetOthers:
+        return L"残りの敵数を取得";
+
+    case BlockType::GetBattleFieldHeight:
+        return L"フィールドの高さを取得";
+
+    case BlockType::GetBattleFieldWidth:
+        return L"フィールドの幅を取得";
+
+    case BlockType::GetHeight:
+        return L"ロボットの高さを取得";
+
+    case BlockType::GetWidth:
+        return L"ロボットの幅を取得";
+
+    case BlockType::GetNumRounds:
+        return L"総ラウンド数を取得";
+
+    case BlockType::GetRoundNum:
+        return L"現在のラウンド数を取得";
+
+    case BlockType::GetTime:
+        return L"経過時間を取得";
+        // 特殊行動系
+    case BlockType::FireBulletAndGetResult:
+        return L"弾を撃って結果を取得";
+
+    case BlockType::Scan:
+        return L"索敵する";
+
+        // 関数系
+    case BlockType::ForwardBackwardGun360:
+        return L"前後移動しながら砲塔を360度回す";
+
+    case BlockType::ZigzagMove:
+        return L"左右にジグザグ移動する";
     }
 
     return L"不明";
@@ -1047,6 +1269,7 @@ void ExecuteBlockSequence(
 // イベント名
 // ============================================================
 
+
 std::wstring GetEventName(RobotEvent event)
 {
     switch (event)
@@ -1061,14 +1284,42 @@ std::wstring GetEventName(RobotEvent event)
         return L"被弾したとき";
 
     case RobotEvent::Hit:
-        return L"命中したとき";
+        return L"弾が命中したとき";
 
     case RobotEvent::Collision:
         return L"衝突したとき";
+
+    case RobotEvent::WallHit:
+        return L"壁に衝突したとき";
+
+    case RobotEvent::BulletHit:
+        return L"弾が敵に命中したとき";
+
+    case RobotEvent::BulletMissed:
+        return L"弾が外れたとき";
+
+    case RobotEvent::BulletHitBullet:
+        return L"敵の弾と相殺したとき";
+
+    case RobotEvent::Death:
+        return L"自機が破壊されたとき";
+
+    case RobotEvent::HitByBullet:
+        return L"敵の弾に当たったとき";
+
+    case RobotEvent::HitRobot:
+        return L"敵と衝突したとき";
+
+    case RobotEvent::RobotDeath:
+        return L"敵が破壊されたとき";
+
+    case RobotEvent::Win:
+        return L"勝利したとき";
     }
 
     return L"不明なイベント";
 }
+
 
 // ============================================================
 // イベントの実行：変数を新規作成
