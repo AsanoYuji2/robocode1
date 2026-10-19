@@ -119,10 +119,15 @@ constexpr int ID_CATEGORY_BASE = 2000;
 enum class BlockCategory
 {
     Move,
-    Action,
     Control,
     Variables,
     Other,
+    Function,
+    Event,
+    rotate,
+    Color,
+    Information,
+    System,
     Count
 };
 
@@ -136,9 +141,14 @@ static_cast<int>(BlockCategory::Count);
 const wchar_t* const CATEGORY_NAMES[CATEGORY_COUNT] =
 {
     L"移動",
-    L"アクション",
     L"制御",
     L"変数",
+    L"関数",
+    L"イベント",
+    L"旋回",
+    L"色を変更",
+    L"情報",
+    L"システム",
     L"その他"
 };
 
@@ -148,6 +158,7 @@ const COLORREF CATEGORY_COLORS[CATEGORY_COUNT] =
     RGB(235, 165, 45),   // アクション
     RGB(225, 185, 45),   // 制御
     RGB(220, 90, 150),   // 変数
+    RGB(50, 190, 190),   // イベント
     RGB(120, 120, 130)   // その他
 };
 
@@ -209,16 +220,10 @@ std::vector<BlockType> GetBlockTypes(
             BlockType::Bark
         };
 
-    case BlockCategory::Action:
-        return
-        {
-            BlockType::Fire
-
-        };
-
     case BlockCategory::Control:
         return
         {
+            BlockType::Fire,
             BlockType::Repeat,
             BlockType::EndRepeat,
             BlockType::Wait,
