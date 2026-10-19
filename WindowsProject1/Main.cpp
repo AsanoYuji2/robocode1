@@ -32,6 +32,8 @@ HWND g_resetViewButton = nullptr;
 HWND g_helpButton = nullptr;
 HWND g_mainWindow = nullptr;
 HWND g_numericEdit = nullptr;
+HWND g_undoButton = nullptr;
+HWND g_redoButton = nullptr;
 int g_numericEditBlockIndex = -1;
 int g_numericEditField = 0; // 1=distance, 2=repeatCount, 3=waitSeconds, 4=conditionValue, 5=value
 WNDPROC g_oldNumericEditProc = nullptr;
@@ -97,6 +99,8 @@ constexpr int ID_SHORTCUT_REDO = 1014;
 constexpr int ID_SHORTCUT_COPY = 1015;
 constexpr int ID_SHORTCUT_PASTE = 1016;
 constexpr int ID_SHORTCUT_DELETE = 1017;
+constexpr int ID_UNDO = 1018;
+constexpr int ID_REDO = 1019;
 constexpr int ID_HELP_BUTTON = 1008;
 
 // アクセラレータテーブル
@@ -305,6 +309,28 @@ void InvalidateEditor()
     }
 }
 
+void InvalidateCanvas()
+{
+    if (!g_mainWindow)
+        return;
+
+    RECT rc{};
+    GetClientRect(g_mainWindow, &rc);
+
+    RECT canvasRect = {
+        CANVAS_LEFT,
+        CANVAS_TOP,
+        rc.right,
+        rc.bottom
+    };
+
+    InvalidateRect(
+        g_mainWindow,
+        &canvasRect,
+        FALSE
+    );
+}
+
 // ============================================================
 // 既存ボタンの色を更新
 // ============================================================
@@ -437,6 +463,21 @@ bool IsCanvasPoint(POINT p)
         p.y >= CANVAS_TOP &&
         p.x < client.right &&
         p.y < client.bottom;
+}
+
+bool IsBlackArea(POINT p)
+{
+    RECT client{};
+    GetClientRect(g_mainWindow, &client);
+
+    RECT canvasRect = {
+        CANVAS_LEFT,
+        CANVAS_TOP,
+        client.right - 20,
+        client.bottom - 20
+    };
+
+    return !PtInRect(&canvasRect, p);
 }
 
 // ============================================================
@@ -1052,6 +1093,32 @@ LRESULT CALLBACK WndProc(
             nullptr
         );
 
+        // 元に戻す
+        g_undoButton = CreateWindowW(
+            L"BUTTON",
+            L"元に戻す",
+            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+            150, 450, 95, 35,
+            hwnd,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(ID_UNDO)),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
+        // やり直し
+        g_redoButton = CreateWindowW(
+            L"BUTTON",
+            L"やり直し",
+            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+            250, 450, 95, 35,
+            hwnd,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(ID_REDO)),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
         UpdateButtonColors();
 
         return 0;
@@ -1148,6 +1215,25 @@ LRESULT CALLBACK WndProc(
                 dis,
                 COLOR_NORMAL,
                 L"操作方法"
+            );
+            return TRUE;
+        }
+        if (id == ID_UNDO)
+        {
+            DrawCustomButton(
+                dis,
+                COLOR_NORMAL,
+                L"元に戻す"
+            );
+            return TRUE;
+        }
+
+        if (id == ID_REDO)
+        {
+            DrawCustomButton(
+                dis,
+                COLOR_NORMAL,
+                L"やり直し"
             );
             return TRUE;
         }
@@ -1261,9 +1347,9 @@ LRESULT CALLBACK WndProc(
 
         switch (id)
         {
-            // ====================================================
-// キーボードショートカット
-// ====================================================
+         // ====================================================
+         // キーボードショートカット
+         // ====================================================
 
         case ID_SHORTCUT_SELECT_ALL:
             g_manager.SelectAllBlocks();
@@ -1422,6 +1508,22 @@ LRESULT CALLBACK WndProc(
 
             }
             return 0;
+
+        case ID_UNDO:
+            if (notification == BN_CLICKED)
+            {
+                if (g_manager.Undo())
+                    InvalidateEditor();
+            }
+            return 0;
+
+        case ID_REDO:
+            if (notification == BN_CLICKED)
+            {
+                if (g_manager.Redo())
+                    InvalidateEditor();
+            }
+            return 0;
         }
 
         break;
@@ -1559,7 +1661,7 @@ LRESULT CALLBACK WndProc(
                 g_manager.OnMouseMove(p.x, p.y);
             }
 
-            InvalidateEditor();
+            InvalidateCanvas();
         }
 
         return 0;
@@ -1709,7 +1811,22 @@ LRESULT CALLBACK WndProc(
         }
         else
         {
+            POINT p = {
+                GET_X_LPARAM(lParam),
+                GET_Y_LPARAM(lParam)
+            };
+
+            // マウスを離す前にドラッグ対象の番号を取得
+            int draggedIndex = g_manager.GetDraggedBlockIndex();
+
+            // ドラッグ操作を終了
             g_manager.OnMouseUp(hwnd);
+
+            // 黒い部分で離した場合、ブロックと子ブロックを削除
+            if (IsBlackArea(p) && draggedIndex >= 0)
+            {
+                g_manager.DeleteBlockAndChildren(draggedIndex);
+            }
         }
 
         if (GetCapture() == hwnd)
@@ -1975,7 +2092,7 @@ int WINAPI WinMain(
         return 1;
     }
 
-    ShowWindow(hwnd, nCmdShow);
+    ShowWindow(hwnd, SW_MAXIMIZE);
     UpdateWindow(hwnd);
     ACCEL accel[] =
     {

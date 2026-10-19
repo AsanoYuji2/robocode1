@@ -677,6 +677,45 @@ bool BlockManager::DeleteBlockAt(int x, int y) {
 
 }
 
+bool BlockManager::DeleteBlockAndChildren(int index)
+{
+    if (index < 0 ||
+        index >= static_cast<int>(blocks.size()))
+    {
+        return false;
+    }
+
+    std::vector<int> targets{ index };
+
+    // 接続されている子孫ブロックをすべて収集
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        int current = targets[i];
+
+        for (int j = 0;
+            j < static_cast<int>(parent.size());
+            ++j)
+        {
+            if (parent[j] == current)
+            {
+                // 重複登録を防止
+                if (std::find(
+                    targets.begin(),
+                    targets.end(),
+                    j) == targets.end())
+                {
+                    targets.push_back(j);
+                }
+            }
+        }
+    }
+
+    // 既存の削除処理を利用
+    DeleteBlocks(targets);
+
+    return true;
+}
+
 // ============================================================ 
 // ブロックの置き換え
 // ============================================================
@@ -1168,4 +1207,15 @@ void BlockManager::SelectAllBlocks()
     dragging = false;
     dragStarted = false;
     dragBlocks.clear();
+}
+
+int BlockManager::GetDraggedBlockIndex() const
+{
+    if (!dragging || selected < 0 ||
+        selected >= static_cast<int>(blocks.size()))
+    {
+        return -1;
+    }
+
+    return selected;
 }

@@ -25,6 +25,8 @@ public:
 
     void OnMouseUp(HWND hwnd);
 
+    int GetDraggedBlockIndex() const;
+
     // ========================================================
     // ブロック操作
     // ========================================================
@@ -48,6 +50,8 @@ public:
     void SetDeleteMode(bool enabled);
 
     bool IsDeleteMode() const;
+
+    bool DeleteBlockAndChildren(int index);
 
     // ========================================================
     // 表示位置・ズーム
