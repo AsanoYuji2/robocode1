@@ -403,14 +403,22 @@ int BlockManager::GetChild(int blockIndex) const {
 // ブロックの接続 
 // ============================================================
 
-void BlockManager::SnapSelectedBlock() {
-    if (selected < 0 || selected >= static_cast<int>(blocks.size())) { return; }
+void BlockManager::SnapSelectedBlock()
+{
+    if (selected < 0 ||
+        selected >= static_cast<int>(blocks.size()))
+    {
+        return;
+    }
 
     Block& moving = blocks[selected];
 
     int bestTarget = -1;
     int bestDistance = SNAP_DISTANCE + 1;
     int bestY = moving.y;
+
+    // 接続位置：0 = 下側に接続、1 = 上側に接続
+    int bestSide = -1;
 
     for (int i = 0;
         i < static_cast<int>(blocks.size());
@@ -422,15 +430,34 @@ void BlockManager::SnapSelectedBlock() {
         if (IsDescendant(i, selected))
             continue;
 
-        if (HasChild(i))
-            continue;
-
         const Block& target = blocks[i];
 
+        // 横方向の位置が近いブロックだけを対象にする
         if (std::abs(moving.x - target.x) >= COLUMN_DISTANCE)
             continue;
 
-        int expectedY = target.y + target.h - TAB_HEIGHT;
+        // 接続候補①：相手ブロックの下側
+        if (!HasChild(i))
+        {
+            int expectedY =
+                target.y + target.h - TAB_HEIGHT;
+
+            int distance = std::abs(moving.y - expectedY);
+
+            if (distance <= SNAP_DISTANCE &&
+                distance < bestDistance)
+            {
+                bestTarget = i;
+                bestDistance = distance;
+                bestY = expectedY;
+                bestSide = 0;
+            }
+        }
+
+        // 接続候補②：相手ブロックの上側
+        int expectedY =
+            target.y - moving.h + TAB_HEIGHT;
+
         int distance = std::abs(moving.y - expectedY);
 
         if (distance <= SNAP_DISTANCE &&
@@ -439,6 +466,7 @@ void BlockManager::SnapSelectedBlock() {
             bestTarget = i;
             bestDistance = distance;
             bestY = expectedY;
+            bestSide = 1;
         }
     }
 
@@ -458,10 +486,17 @@ void BlockManager::SnapSelectedBlock() {
             }
         }
 
+        // 上側・下側どちらから接続しても親子関係を登録
         parent[selected] = bestTarget;
+
+        // 上側接続の場合、移動ブロックを親にする必要があるため、
+        // 接続関係を逆向きにする
+        if (bestSide == 1)
+        {
+            parent[bestTarget] = selected;
+            parent[selected] = -1;
+        }
     }
-
-
 }
 
 // ============================================================ 

@@ -175,6 +175,9 @@ BlockCategory g_selectedCategory = BlockCategory::Move;
 // ホバー中のカテゴリー番号
 int g_hoveredCategory = -1;
 
+// ホバー中のブロック一覧の項目番号
+int g_hoveredBlockListItem = -1;
+
 WNDPROC g_oldCategoryProcs[CATEGORY_COUNT] = {};
 
 
@@ -592,6 +595,69 @@ LRESULT CALLBACK BlockListProc(
 
     switch (msg)
     {
+
+    case WM_MOUSEMOVE:
+    {
+        // マウスカーソルが乗っている項目を取得
+        POINT p = {
+            GET_X_LPARAM(lp),
+            GET_Y_LPARAM(lp)
+        };
+
+        LRESULT hit = SendMessageW(
+            hwnd,
+            LB_ITEMFROMPOINT,
+            0,
+            MAKELPARAM(p.x, p.y)
+        );
+
+        int index = -1;
+
+        // リストの外側では項目をホバー扱いにしない
+        if (HIWORD(hit) == 0)
+        {
+            int itemIndex = LOWORD(hit);
+
+            if (itemIndex >= 0 &&
+                itemIndex < static_cast<int>(
+                    g_visibleBlockTypes.size()))
+            {
+                index = itemIndex;
+            }
+        }
+
+        // ホバー対象が変わった場合だけ再描画
+        if (g_hoveredBlockListItem != index)
+        {
+            g_hoveredBlockListItem = index;
+
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+
+        // マウスがリストから出たことを検知する
+        TRACKMOUSEEVENT tme{};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd;
+
+        TrackMouseEvent(&tme);
+
+        break;
+    }
+
+    case WM_MOUSELEAVE:
+    {
+        // カーソルがリストから出たら解除
+        if (g_hoveredBlockListItem != -1)
+        {
+            g_hoveredBlockListItem = -1;
+
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+
+        break;
+    }
+
     case WM_LBUTTONDOWN:
     {
         // クリックされた項目を取得
@@ -879,8 +945,21 @@ void DrawBlockListItem(
             static_cast<int>(g_selectedCategory)
         ];
 
-    // 選択中は明るくする
-    if (selected)
+    // ホバー中かどうか
+    bool hovered =
+        (index == g_hoveredBlockListItem);
+
+    // ホバー中は明るくする
+    if (hovered)
+    {
+        color = RGB(
+            (std::min)(GetRValue(color) + 30, 255),
+            (std::min)(GetGValue(color) + 30, 255),
+            (std::min)(GetBValue(color) + 30, 255)
+        );
+    }
+    // 選択中は少し明るくする
+    else if (selected)
     {
         color = RGB(
             (std::min)(GetRValue(color) + 35, 255),
@@ -888,6 +967,7 @@ void DrawBlockListItem(
             (std::min)(GetBValue(color) + 35, 255)
         );
     }
+
 
     HBRUSH brush = CreateSolidBrush(color);
     FillRect(hdc, &rc, brush);
