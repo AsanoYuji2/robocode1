@@ -157,6 +157,12 @@ HWND g_categoryButtons[CATEGORY_COUNT] = {};
 // 現在選択中のカテゴリ
 BlockCategory g_selectedCategory = BlockCategory::Move;
 
+// ホバー中のカテゴリー番号
+int g_hoveredCategory = -1;
+
+WNDPROC g_oldCategoryProcs[CATEGORY_COUNT] = {};
+
+
 // 現在のカテゴリに表示するブロック
 std::vector<BlockType> g_visibleBlockTypes;
 
@@ -551,9 +557,63 @@ LRESULT CALLBACK BlockListProc(
     return result;
 }
 
+
+
+
+
 // ============================================================
 // カテゴリボタンを作成
 // ============================================================
+
+LRESULT CALLBACK CategoryButtonProc(
+    HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    int index = -1;
+
+    for (int i = 0; i < CATEGORY_COUNT; ++i)
+    {
+        if (g_categoryButtons[i] == hwnd)
+        {
+            index = i;
+            break;
+        }
+    }
+
+    if (index < 0 || !g_oldCategoryProcs[index])
+    {
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    }
+
+    switch (msg)
+    {
+    case WM_MOUSEMOVE:
+        if (g_hoveredCategory != index)
+        {
+            g_hoveredCategory = index;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+
+        {
+            TRACKMOUSEEVENT tme{};
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hwnd;
+            TrackMouseEvent(&tme);
+        }
+        break;
+
+    case WM_MOUSELEAVE:
+        if (g_hoveredCategory == index)
+        {
+            g_hoveredCategory = -1;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        break;
+    }
+
+    return CallWindowProcW(
+        g_oldCategoryProcs[index], hwnd, msg, wp, lp);
+}
 
 void CreateCategoryButtons(HWND hwnd)
 {
@@ -582,6 +642,18 @@ void CreateCategoryButtons(HWND hwnd)
             GetModuleHandleW(nullptr),
             nullptr
         );
+
+        if (g_categoryButtons[i])
+        {
+            g_oldCategoryProcs[i] = reinterpret_cast<WNDPROC>(
+                SetWindowLongPtrW(
+                    g_categoryButtons[i],
+                    GWLP_WNDPROC,
+                    reinterpret_cast<LONG_PTR>(CategoryButtonProc)
+                )
+                );
+        }
+
     }
 }
 
@@ -604,6 +676,37 @@ void DrawCategoryButton(
         == categoryIndex;
 
     COLORREF color = CATEGORY_COLORS[categoryIndex];
+
+    bool hovered = (g_hoveredCategory == categoryIndex);
+
+    int r = GetRValue(color);
+    int g = GetGValue(color);
+    int b = GetBValue(color);
+
+    if (hovered)
+    {
+        // マウスが乗っているときは明るくする
+        color = RGB(
+            min(r + 60, 255),
+            min(g + 60, 255),
+            min(b + 60, 255)
+        );
+    }
+    else if (selected)
+    {
+        // 選択中は少し明るくする
+        color = RGB(
+            min(r + 35, 255),
+            min(g + 35, 255),
+            min(b + 35, 255)
+        );
+    }
+    else
+    {
+        // 通常時は少し暗くする
+        color = RGB(r * 3 / 4, g * 3 / 4, b * 3 / 4);
+    }
+
 
     // 選択中は少し明るくする
     if (selected)
@@ -1639,6 +1742,8 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
+        g_manager.OnMouseMove(p.x, p.y);
+
         // 左ボタンを押している間
         if (wParam & MK_LBUTTON)
         {
@@ -1660,9 +1765,15 @@ LRESULT CALLBACK WndProc(
                 // 通常のブロック移動
                 g_manager.OnMouseMove(p.x, p.y);
             }
-
-            InvalidateCanvas();
         }
+        else
+        {
+            // クリックしていなくてもカーソル位置を更新
+            g_manager.OnMouseMove(p.x, p.y);
+        }
+
+        // カーソルが動くたびに再描画
+        InvalidateCanvas();
 
         return 0;
     }

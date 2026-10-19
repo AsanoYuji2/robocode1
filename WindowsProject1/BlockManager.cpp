@@ -42,6 +42,9 @@ void BlockManager::Initialize() {
     viewX = 350.0f;
     viewY = 0.0f;
 
+    // マウスカーソル位置の初期化
+    mouseX = -1;
+    mouseY = -1;
 
 }
 
@@ -134,173 +137,62 @@ void BlockManager::DrawAll(HDC hdc) const
     SetWorldTransform(hdc, &transform);
 
     // 全てのブロックを描画
-    for (const Block& block : blocks)
+    //for (const Block& block : blocks)
+    //{
+      //  DrawBlock(hdc, block);
+    //}
+
+    // マウスカーソルの座標をワールド座標に変換
+    POINT world = ScreenToWorld(mouseX, mouseY);
+
+    int hoveredIndex = -1;
+
+    // カーソル下のブロックを判定
+    for (int i = static_cast<int>(blocks.size()) - 1;
+        i >= 0; --i)
     {
-        DrawBlock(hdc, block);
+        if (HitBlock(blocks[i], world.x, world.y))
+        {
+            hoveredIndex = i;
+            break;
+        }
     }
 
-    // 青枠の描画設定
-    HPEN selectionPen = CreatePen(
-        PS_SOLID,
-        2,
-        RGB(40, 150, 255));
-
-    if (selectionPen)
+    // ブロック全体を描画。カーソル下なら明るい色にする
+    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
     {
-        HGDIOBJ oldPen = SelectObject(hdc, selectionPen);
-        HGDIOBJ oldBrush = SelectObject(
-            hdc,
-            GetStockObject(HOLLOW_BRUSH));
-
-        const int count = static_cast<int>(blocks.size());
-
-        std::vector<bool> processed(count, false);
-
-        // 選択対象かどうかを判定
-        auto isSelected = [&](int index) -> bool
-            {
-                if (!selectedBlocks.empty())
-                {
-                    return std::find(
-                        selectedBlocks.begin(),
-                        selectedBlocks.end(),
-                        index) != selectedBlocks.end();
-                }
-
-                if (selected < 0 || selected >= count)
-                    return false;
-
-                return index == selected ||
-                    IsDescendant(index, selected);
-            };
-
-        // 指定ブロックの親をたどって、接続グループの先頭を取得
-        auto getRoot = [&](int index) -> int
-            {
-                int current = index;
-
-                for (int steps = 0; steps < count; ++steps)
-                {
-                    if (current < 0 ||
-                        current >= static_cast<int>(parent.size()))
-                    {
-                        break;
-                    }
-
-                    int p = parent[current];
-
-                    if (p < 0 || p >= count)
-                        break;
-
-                    current = p;
-                }
-
-                return current;
-            };
-
-        // 接続グループを1つの青枠で囲む
-        auto drawGroup = [&](int root)
-            {
-                int minX = blocks[root].x;
-                int minY = blocks[root].y;
-                int maxX = blocks[root].x + blocks[root].w;
-                int maxY = blocks[root].y + blocks[root].h;
-
-                int groupSize = 0;
-
-                for (int i = 0; i < count; ++i)
-                {
-                    if (i == root || IsDescendant(i, root))
-                    {
-                        if (!isSelected(i))
-                            continue;
-
-                        const Block& block = blocks[i];
-
-                        minX = (std::min)(minX, block.x);
-                        minY = (std::min)(minY, block.y);
-                        maxX = (std::max)(maxX, block.x + block.w);
-                        maxY = (std::max)(maxY, block.y + block.h);
-
-                        processed[i] = true;
-                        ++groupSize;
-                    }
-                }
-
-                if (groupSize == 0)
-                    return;
-
-                Rectangle(
-                    hdc,
-                    minX - SELECTION_PADDING,
-                    minY - SELECTION_PADDING,
-                    maxX + SELECTION_PADDING,
-                    maxY + SELECTION_PADDING);
-            };
-
-        // 選択されたブロックを接続グループごとに描画
-        for (int i = 0; i < count; ++i)
-        {
-            if (!isSelected(i) || processed[i])
-                continue;
-
-            int root = getRoot(i);
-
-            if (root < 0 || root >= count)
-                continue;
-
-            drawGroup(root);
-        }
-
-        SelectObject(hdc, oldBrush);
-        SelectObject(hdc, oldPen);
-        DeleteObject(selectionPen);
+        DrawBlock(hdc, blocks[i], i == hoveredIndex);
     }
 
     // 範囲選択中の四角形
     if (selectingRange)
     {
         int left = (std::min)(
-            selectionStart.x,
-            selectionEnd.x);
-
+            selectionStart.x, selectionEnd.x);
         int top = (std::min)(
-            selectionStart.y,
-            selectionEnd.y);
-
+            selectionStart.y, selectionEnd.y);
         int right = (std::max)(
-            selectionStart.x,
-            selectionEnd.x);
-
+            selectionStart.x, selectionEnd.x);
         int bottom = (std::max)(
-            selectionStart.y,
-            selectionEnd.y);
+            selectionStart.y, selectionEnd.y);
 
         HPEN rangePen = CreatePen(
-            PS_SOLID,
-            2,
-            RGB(40, 150, 255));
+            PS_SOLID, 2, RGB(40, 150, 255));
 
         if (rangePen)
         {
             HGDIOBJ previousPen = SelectObject(hdc, rangePen);
             HGDIOBJ previousBrush = SelectObject(
-                hdc,
-                GetStockObject(HOLLOW_BRUSH));
+                hdc, GetStockObject(HOLLOW_BRUSH));
 
-            Rectangle(
-                hdc,
-                left,
-                top,
-                right,
-                bottom);
+            Rectangle(hdc, left, top, right, bottom);
 
             SelectObject(hdc, previousBrush);
             SelectObject(hdc, previousPen);
-
             DeleteObject(rangePen);
         }
     }
+
 
     RestoreDC(hdc, savedDC);
 }
@@ -406,6 +298,11 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
 
 void BlockManager::OnMouseMove(int x, int y)
 {
+    // カーソルの位置を毎回更新する
+    mouseX = x;
+
+    mouseY = y;
+
     if (!dragging || selected < 0)
         return;
 
