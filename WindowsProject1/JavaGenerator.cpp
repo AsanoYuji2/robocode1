@@ -117,47 +117,89 @@ bool ExportJava(const std::vector<Block>& blocks)
         {
         case BlockType::Move:
             code +=
-                "            setAhead(100);\n"
+                "            setAhead(" +
+                std::to_string(b.distance) + ");\n"
                 "            execute();\n";
             break;
 
-        case BlockType::Bark:
+        case BlockType::MoveBackward:
             code +=
-                "            setBack(100);\n"
+                "            setBack(" +
+                std::to_string(b.distance) + ");\n"
                 "            execute();\n";
             break;
 
-        case BlockType::Turn:
+
+        case BlockType::TurnRight:
             code +=
-                "            setTurnRight(90);\n"
+                "            setTurnRight(" +
+                std::to_string(b.degrees) + ");\n"
                 "            execute();\n";
             break;
 
         case BlockType::TurnLeft:
             code +=
-                "            setTurnLeft(90);\n"
+                "            setTurnLeft(" +
+                std::to_string(b.degrees) + ");\n"
                 "            execute();\n";
             break;
 
         case BlockType::MoveRight:
             code +=
-                "            turnRight(90);\n"
-                "            ahead(100);\n"
-                "            turnLeft(90);\n"
+                "            setTurnRight(90);\n"
+                "            setAhead(" +
+                std::to_string(b.distance) + ");\n"
+                "            setTurnLeft(90);\n"
                 "            execute();\n";
             break;
 
         case BlockType::MoveLeft:
             code +=
-                "            turnLeft(90);\n"
-                "            ahead(100);\n"
-                "            turnRight(90);\n"
+                "            setTurnLeft(90);\n"
+                "            setAhead(" +
+                std::to_string(b.distance) + ");\n"
+                "            setTurnRight(90);\n"
                 "            execute();\n";
             break;
 
-        case BlockType::Fire:
+        case BlockType::FireBullet:
             code +=
-                "            fire(2);\n"
+                "            fire(" +
+                std::to_string(b.power) + ");\n"
+                "            execute();\n";
+            break;
+        case BlockType::FireBulletAndGetResult:
+            code +=
+                "            Bullet bullet = fireBullet(" +
+                std::to_string(b.power) + ");\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::Scan:
+            code +=
+                "            setTurnRadarRight(360);\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::ForwardBackwardGun360:
+            code +=
+                "            setAdjustGunForRobotTurn(true);\n"
+                "            setTurnGunRight(360);\n"
+                "            setAhead(100);\n"
+                "            execute();\n"
+                "            setBack(100);\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::ZigzagMove:
+            code +=
+                "            setTurnRight(45);\n"
+                "            setAhead(100);\n"
+                "            execute();\n"
+                "            setTurnLeft(90);\n"
+                "            setAhead(100);\n"
+                "            execute();\n"
+                "            setTurnRight(45);\n"
                 "            execute();\n";
             break;
         }
