@@ -649,37 +649,38 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     HGDIOBJ oldBrush = SelectObject(hdc, brush);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
 
-    Rectangle(
-        hdc,
-        b.x,
-        b.y + tabH,
-        b.x + b.w,
-        b.y + b.h
-    );
+    
 
-    RECT notch =
+    POINT points[] =
     {
-        b.x + 24,
-        b.y,
-        b.x + 64,
-        b.y + tabH + 1
+        { b.x,          b.y },
+        { b.x + 24,     b.y },
+        { b.x + 24,     b.y + tabH },
+        { b.x + 64,     b.y + tabH },
+        { b.x + 64,     b.y },
+        { b.x + b.w,    b.y },
+        { b.x + b.w,    b.y + b.h },
+        { b.x,          b.y + b.h }
     };
 
-    FillRect(
+    Polygon(
         hdc,
-        &notch,
-        (HBRUSH)GetStockObject(WHITE_BRUSH)
+        points,
+        sizeof(points) / sizeof(points[0])
     );
 
-    RECT tab =
-    {
-        b.x + 24,
-        b.y + b.h - tabH,
-        b.x + 64,
-        b.y + b.h + 1
-    };
+   
+    // 下側の四角い突起
+RECT tab =
+{
+    b.x + 24,           // 左端
+    b.y + b.h - 1,      // 上端
+    b.x + 64,           // 右端
+    b.y + b.h + tabH    // 下端
+};
 
-    FillRect(hdc, &tab, brush);
+FillRect(hdc, &tab, brush);
+
 
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 255, 255));
