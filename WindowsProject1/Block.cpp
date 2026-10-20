@@ -157,6 +157,18 @@ static COLORREF GetBrightBlockColor(BlockType type)
     return RGB(r, g, b);
 }
 
+static COLORREF MakeBrighterColor(COLORREF color)
+{
+    int r = GetRValue(color);
+    int g = GetGValue(color);
+    int b = GetBValue(color);
+
+    r = r + (255 - r) * 50 / 100;
+    g = g + (255 - g) * 50 / 100;
+    b = b + (255 - b) * 50 / 100;
+
+    return RGB(r, g, b);
+}
 
 // ============================================================
 // 条件名
@@ -610,10 +622,14 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     const int tabH = 8;
 
 
-    // ホバー中なら明るい色、通常時ならカテゴリー色
-    COLORREF blockColor = glowing
-        ? GetBrightBlockColor(b.type)
-        : GetBlockColor(b.type);
+    // 通常時はブロック種類ごとの色を使用する
+    // ホバー時は、その色を明るくする
+    COLORREF blockColor = GetBlockColor(b.type);
+
+    if (glowing)
+    {
+        blockColor = MakeBrighterColor(blockColor);
+    }
 
     HBRUSH brush = CreateSolidBrush(blockColor);
 
