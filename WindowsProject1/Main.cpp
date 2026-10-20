@@ -12,6 +12,7 @@
 #include "BlockManager.h"
 #include "JavaGenerator.h"
 #include "BlockFileManager.h"
+#include"BlockColors.h"
 
 #pragma comment(lib, "Comdlg32.lib")
 
@@ -211,6 +212,31 @@ void UpdateView()
     );
 }
 
+// ============================================================
+// カテゴリ別のブロック一覧（前方宣言）
+// ============================================================
+
+std::vector<BlockType> GetBlockTypes(BlockCategory category);
+
+BlockCategory GetCategoryFromBlockType(BlockType type)
+{
+    for (int i = 0; i < CATEGORY_COUNT; ++i)
+    {
+        BlockCategory category =
+            static_cast<BlockCategory>(i);
+
+        std::vector<BlockType> types =
+            GetBlockTypes(category);
+
+        for (BlockType t : types)
+        {
+            if (t == type)
+                return category;
+        }
+    }
+
+    return BlockCategory::Other;
+}
 // ============================================================
 // カテゴリ別のブロック一覧
 // ============================================================
@@ -928,85 +954,78 @@ void DrawCategoryButton(
 // =======================================================
 // ブロック一覧の項目をカテゴリーごとに色分け
 // =========================================================
-void DrawBlockListItem(
-    const DRAWITEMSTRUCT* dis)
+
+
+void DrawBlockListItem(const DRAWITEMSTRUCT* dis)
 {
     if (!dis)
         return;
 
+    int index = static_cast<int>(dis->itemID);
     HDC hdc = dis->hDC;
     RECT rc = dis->rcItem;
 
-    int index = static_cast<int>(dis->itemID);
-
-    // 選択状態
-    bool selected =
-        (dis->itemState & ODS_SELECTED) != 0;
-
-    // カテゴリーの色を取得
-    COLORREF color =
-        CATEGORY_COLORS[
-            static_cast<int>(g_selectedCategory)
-        ];
-
-    // ホバー中かどうか
-    bool hovered =
-        (index == g_hoveredBlockListItem);
-
-    // ホバー中は明るくする
-    if (hovered)
+    // 項目が無効な場合
+    if (index < 0 ||
+        index >= static_cast<int>(g_visibleBlockTypes.size()))
     {
-        color = RGB(
-            (std::min)(GetRValue(color) + 30, 255),
-            (std::min)(GetGValue(color) + 30, 255),
-            (std::min)(GetBValue(color) + 30, 255)
-        );
-    }
-    // 選択中は少し明るくする
-    else if (selected)
-    {
-        color = RGB(
-            (std::min)(GetRValue(color) + 35, 255),
-            (std::min)(GetGValue(color) + 35, 255),
-            (std::min)(GetBValue(color) + 35, 255)
-        );
+        FillRect(hdc, &rc, GetSysColorBrush(COLOR_WINDOW));
+        return;
     }
 
+    // ブロック種類とカテゴリ色を取得
+    BlockType type = g_visibleBlockTypes[index];
+    COLORREF color = GetBlockCategoryColor(type);
 
+    // 色の値をデバッグ出力
+    wchar_t debug[128]{};
+    swprintf_s(
+        debug,
+        L"index=%d, type=%d, color=0x%08X\n",
+        index,
+        static_cast<int>(type),
+        static_cast<unsigned int>(color)
+    );
+    OutputDebugStringW(debug);
+
+    // ホバー・選択状態
+    bool selected = (dis->itemState & ODS_SELECTED) != 0;
+    bool hovered = (index == g_hoveredBlockListItem);
+
+    if (hovered || selected)
+    {
+        int amount = hovered ? 30 : 20;
+
+        color = RGB(
+            (std::min)(GetRValue(color) + amount, 255),
+            (std::min)(GetGValue(color) + amount, 255),
+            (std::min)(GetBValue(color) + amount, 255)
+        );
+    }
+
+    // 背景色を描画
     HBRUSH brush = CreateSolidBrush(color);
     FillRect(hdc, &rc, brush);
     DeleteObject(brush);
 
-    // 文字色
+    // ブロック名を描画
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 255, 255));
 
-    // 項目名を取得して描画
-    if (index >= 0 &&
-        index < static_cast<int>(
-            g_visibleBlockTypes.size()))
-    {
-        std::wstring name =
-            GetBlockName(g_visibleBlockTypes[index]);
+    std::wstring name = GetBlockName(type);
+    rc.left += 8;
 
-        rc.left += 8;
+    DrawTextW(
+        hdc,
+        name.c_str(),
+        -1,
+        &rc,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE
+    );
 
-        DrawTextW(
-            hdc,
-            name.c_str(),
-            -1,
-            &rc,
-            DT_LEFT | DT_VCENTER | DT_SINGLELINE
-        );
-    }
-
-    // フォーカス枠
     if (dis->itemState & ODS_FOCUS)
-    {
         DrawFocusRect(hdc, &dis->rcItem);
-    }
 }
-
 
 
 void FinishNumericEdit(HWND hwnd, bool commit);
@@ -2556,10 +2575,15 @@ LRESULT CALLBACK WndProc(
                 g_listDragPoint.y + 42
             };
 
-            // 選択中のカテゴリーの色を使用
-            HBRUSH dragBrush = CreateSolidBrush(
-                CATEGORY_COLORS[static_cast<int>(g_selectedCategory)]
-            );
+            // ブロック一覧と同じ色を取得
+            COLORREF dragColor =
+                GetBlockCategoryColor(g_dragBlockType);
+
+            HBRUSH dragBrush = CreateSolidBrush(dragColor);
+
+            FillRect(memDC, &dragRect, dragBrush);
+
+            DeleteObject(dragBrush);
 
             FillRect(memDC, &dragRect, dragBrush);
             DeleteObject(dragBrush);
@@ -2758,3 +2782,4 @@ int WINAPI WinMain(
 
     return static_cast<int>(msg.wParam);
 }
+//大半のブロックがリストからドラッグして取ってくると色が変わる

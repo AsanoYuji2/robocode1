@@ -130,6 +130,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Block.h" />
+    <ClInclude Include="BlockColors.h" />
     <ClInclude Include="BlockFileManager.h" />
     <ClInclude Include="BlockManager.h" />
     <ClInclude Include="framework.h" />

@@ -4,6 +4,7 @@
 #include <cmath> 
 #include <algorithm> 
 #include <vector>
+#include "BlockColors.h"
 
 namespace { constexpr int SNAP_DISTANCE = 24; constexpr int COLUMN_DISTANCE = 35; constexpr int TAB_HEIGHT = 8; constexpr int SELECTION_PADDING = 6; constexpr int MAX_HISTORY = 100; }
 
@@ -136,12 +137,6 @@ void BlockManager::DrawAll(HDC hdc) const
 
     SetWorldTransform(hdc, &transform);
 
-    // 全てのブロックを描画
-    //for (const Block& block : blocks)
-    //{
-      //  DrawBlock(hdc, block);
-    //}
-
     // マウスカーソルの座標をワールド座標に変換
     POINT world = ScreenToWorld(mouseX, mouseY);
 
@@ -158,10 +153,24 @@ void BlockManager::DrawAll(HDC hdc) const
         }
     }
 
-    // ブロック全体を描画。カーソル下なら明るい色にする
+    // ドラッグ中、またはカーソル下のブロックを明るくする
     for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
     {
-        DrawBlock(hdc, blocks[i], i == hoveredIndex);
+        bool glowing = (i == hoveredIndex);
+
+        // ドラッグ中のブロックも明るくする
+        if (dragging)
+        {
+            if (std::find(
+                dragBlocks.begin(),
+                dragBlocks.end(),
+                i) != dragBlocks.end())
+            {
+                glowing = true;
+            }
+        }
+
+        DrawBlock(hdc, blocks[i], glowing);
     }
 
     // 範囲選択中の四角形
