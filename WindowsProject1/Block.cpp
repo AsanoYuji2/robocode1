@@ -1,4 +1,5 @@
 #include "Block.h"
+#include "BlockColors.h"
 
 #include <algorithm>
 #include <chrono>
@@ -622,9 +623,9 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     const int tabH = 8;
 
 
-    // 通常時はブロック種類ごとの色を使用する
+    // リストと同じカテゴリ色を使用する
     // ホバー時は、その色を明るくする
-    COLORREF blockColor = GetBlockColor(b.type);
+    COLORREF blockColor = GetBlockCategoryColor(b.type);
 
     if (glowing)
     {
@@ -632,8 +633,6 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     }
 
     HBRUSH brush = CreateSolidBrush(blockColor);
-
-
 
     if (!brush)
         return;
