@@ -56,6 +56,10 @@ POINT g_lastPanPoint = { 0, 0 };
 
 POINT g_listDragPoint = { 0, 0 };
 
+// 色変更ブロックのクリック判定用
+POINT g_colorClickStart = { 0, 0 };
+bool g_colorClickCandidate = false;
+
 // ============================================================
 // ズーム・表示位置
 // ============================================================
@@ -1297,6 +1301,119 @@ void FinishNumericEdit(HWND hwnd, bool commit)
     InvalidateRect(hwnd, nullptr, FALSE);
 }
 
+// ============================================================
+// 色変更ブロックの色見本部分をクリックしたか判定
+// ============================================================
+
+bool IsColorEditArea(const Block& block, POINT worldPoint)
+{
+    // ブロック右端の色見本部分をクリック範囲にする
+    constexpr int COLOR_AREA_WIDTH = 32;
+
+    int left = block.x + block.w - COLOR_AREA_WIDTH;
+    int right = block.x + block.w;
+
+    return
+        worldPoint.x >= left &&
+        worldPoint.x < right &&
+        worldPoint.y >= block.y &&
+        worldPoint.y < block.y + block.h;
+}
+bool TryStartColorEdit(HWND hwnd, POINT worldPoint)
+{
+    const auto& blocks = g_manager.GetBlocks();
+
+    // 手前のブロックから判定する
+    for (int i = static_cast<int>(blocks.size()) - 1;
+        i >= 0; --i)
+    {
+        const Block& block = blocks[static_cast<size_t>(i)];
+
+        // ブロック内で、さらに色選択専用の範囲内か判定
+        if (!IsColorEditArea(block, worldPoint))
+        {
+            continue;
+        }
+
+        COLORREF currentColor = RGB(0, 0, 0);
+
+        switch (block.type)
+        {
+        case BlockType::SetBodyColor:
+            currentColor = block.bodyColor;
+            break;
+
+        case BlockType::SetGunColor:
+            currentColor = block.gunColor;
+            break;
+
+        case BlockType::SetRadarColor:
+            currentColor = block.radarColor;
+            break;
+
+        case BlockType::SetBulletColor:
+            currentColor = block.bulletColor;
+            break;
+
+        case BlockType::SetScanColor:
+            currentColor = block.scanColor;
+            break;
+
+        default:
+            return false;
+        }
+
+        // 色選択ダイアログを開く
+        static COLORREF customColors[16]{};
+
+        CHOOSECOLORW cc{};
+        cc.lStructSize = sizeof(cc);
+        cc.hwndOwner = hwnd;
+        cc.rgbResult = currentColor;
+        cc.lpCustColors = customColors;
+        cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+
+        if (ChooseColorW(&cc))
+        {
+            // 選択結果をブロックに反映
+            Block updated = block;
+
+            switch (block.type)
+            {
+            case BlockType::SetBodyColor:
+                updated.bodyColor = cc.rgbResult;
+                break;
+
+            case BlockType::SetGunColor:
+                updated.gunColor = cc.rgbResult;
+                break;
+
+            case BlockType::SetRadarColor:
+                updated.radarColor = cc.rgbResult;
+                break;
+
+            case BlockType::SetBulletColor:
+                updated.bulletColor = cc.rgbResult;
+                break;
+
+            case BlockType::SetScanColor:
+                updated.scanColor = cc.rgbResult;
+                break;
+
+            default:
+                break;
+            }
+
+            g_manager.UpdateBlockAt(i, updated);
+            InvalidateEditor();
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
 bool TryStartNumericEdit(HWND hwnd, POINT screenPoint, POINT worldPoint)
 {
     const auto& blocks = g_manager.GetBlocks();
@@ -1336,9 +1453,19 @@ bool TryStartNumericEdit(HWND hwnd, POINT screenPoint, POINT worldPoint)
         else if (field == 3)
             initial = std::to_wstring(block.waitSeconds);
         else if (field == 6)
-            initial = std::to_wstring(block.degrees);
+        {
+            // 旋回角度：小数点以下の不要な0を削除
+            wchar_t buffer[64]{};
+            swprintf_s(buffer, L"%.10g", block.degrees);
+            initial = buffer;
+        }
         else if (field == 7)
-            initial = std::to_wstring(block.power);
+        {
+            // 弾の威力：小数点以下の不要な0を削除
+            wchar_t buffer[64]{};
+            swprintf_s(buffer, L"%.10g", block.power);
+            initial = buffer;
+        }
         else if (field == 4)
             initial = std::to_wstring(block.conditionValue);
         else
@@ -2087,6 +2214,65 @@ LRESULT CALLBACK WndProc(
             return 0;
 
         POINT world = g_manager.ScreenToWorld(p.x, p.y);
+
+        // 色変更ブロックをクリックした可能性を記録する
+        // ========================================================
+// 色変更ブロックの色見本部分をクリックしたか判定
+// ========================================================
+
+        g_colorClickCandidate = false;
+
+        const auto& colorBlocks = g_manager.GetBlocks();
+
+        if ((GetKeyState(VK_CONTROL) & 0x8000) == 0)
+        {
+            for (int i = static_cast<int>(colorBlocks.size()) - 1;
+                i >= 0; --i)
+            {
+                const Block& b = colorBlocks[static_cast<size_t>(i)];
+
+                // ブロックの範囲内か確認
+                if (world.x < b.x ||
+                    world.x >= b.x + b.w ||
+                    world.y < b.y ||
+                    world.y >= b.y + b.h)
+                {
+                    continue;
+                }
+
+                // 色変更ブロックか確認
+                bool isColorBlock = false;
+
+                switch (b.type)
+                {
+                case BlockType::SetBodyColor:
+                case BlockType::SetGunColor:
+                case BlockType::SetRadarColor:
+                case BlockType::SetBulletColor:
+                case BlockType::SetScanColor:
+                    isColorBlock = true;
+                    break;
+
+                default:
+                    break;
+                }
+
+                // 最前面のブロックが色変更ブロックでなければ終了
+                if (!isColorBlock)
+                    break;
+
+                // 色見本部分をクリックした場合だけ編集対象にする
+                if (IsColorEditArea(b, world))
+                {
+                    g_colorClickCandidate = true;
+                    g_colorClickStart = p;
+                }
+
+                break;
+            }
+        }
+
+        // 数値入力ブロックなら数値入力欄を開く
         if (TryStartNumericEdit(hwnd, p, world))
             return 0;
         if (g_numericEdit)
@@ -2134,6 +2320,14 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
+        // 色変更ブロックをクリックした場合は色を編集する。
+        // ただし、Ctrlキーを押しながらなら通常の選択・移動を優先する。
+        if ((GetKeyState(VK_CONTROL) & 0x8000) == 0)
+        {
+            if (TryStartColorEdit(hwnd, world))
+                return 0;
+        }
+
         // ブロックをクリックしたら通常の選択・移動
         g_manager.OnMouseDown(hwnd, p.x, p.y);
 
@@ -2150,6 +2344,36 @@ LRESULT CALLBACK WndProc(
 
     case WM_LBUTTONUP:
     {
+        // 色変更ブロックのクリック操作を判定する
+        if (g_colorClickCandidate)
+        {
+            g_colorClickCandidate = false;
+
+            POINT p = {
+                GET_X_LPARAM(lParam),
+                GET_Y_LPARAM(lParam)
+            };
+
+            int dx = abs(p.x - g_colorClickStart.x);
+            int dy = abs(p.y - g_colorClickStart.y);
+
+            // ほとんど移動していない場合だけクリックとみなす
+            if (dx <= 4 && dy <= 4)
+            {
+                POINT world = g_manager.ScreenToWorld(
+                    p.x, p.y
+                );
+
+                if (TryStartColorEdit(hwnd, world))
+                {
+                    // マウス捕捉を解除して編集終了
+                    if (GetCapture() == hwnd)
+                        ReleaseCapture();
+
+                    return 0;
+                }
+            }
+        }
         // リストからドラッグしたブロックをドロップ
         if (g_draggingFromList)
         {

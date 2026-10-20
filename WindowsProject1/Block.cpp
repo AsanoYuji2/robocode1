@@ -4,6 +4,8 @@
 #include <chrono>
 #include <thread>
 #include <limits>
+#include <sstream>
+#include <iomanip>
 
 // ============================================================
 // ブロック種類の一覧取得
@@ -248,6 +250,32 @@ static std::wstring GetConditionName(
 }
 
 // ============================================================
+// 数値を見やすい文字列に変換
+// ============================================================
+
+static std::wstring FormatNumber(double value)
+{
+    std::wostringstream stream;
+
+    // 小数点以下を最大2桁まで表示
+    stream << std::fixed << std::setprecision(2) << value;
+
+    std::wstring result = stream.str();
+
+    // 小数点以下の末尾の0を削除
+    if (result.find(L'.') != std::wstring::npos)
+    {
+        while (!result.empty() && result.back() == L'0')
+            result.pop_back();
+
+        if (!result.empty() && result.back() == L'.')
+            result.pop_back();
+    }
+
+    return result;
+}
+
+// ============================================================
 // ブロック名
 // ============================================================
 
@@ -265,11 +293,11 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::TurnRight:
         return L"右に旋回 " +
-            std::to_wstring(b.degrees) + L" 度";
+            FormatNumber(b.degrees) + L" 度";
 
     case BlockType::TurnLeft:
         return L"左に旋回 " +
-            std::to_wstring(b.degrees) + L" 度";
+            FormatNumber(b.degrees) + L" 度";
 
     case BlockType::MoveRight:
         return L"右に移動  " +
@@ -281,7 +309,7 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::FireBullet:
         return L"弾を発射 威力 " +
-            std::to_wstring(b.power);
+            FormatNumber(b.power);
 
     case BlockType::Repeat:
         return L"繰り返す  " +
@@ -292,7 +320,7 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::Wait:
         return L"指定秒数待つ " +
-            std::to_wstring(b.waitSeconds) + L"秒";
+            FormatNumber(b.waitSeconds) + L"秒";
 
     case BlockType::If:
         switch (b.condition)
@@ -659,6 +687,63 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         DT_LEFT | DT_VCENTER |
         DT_SINGLELINE | DT_END_ELLIPSIS
     );
+
+    // 色変更ブロックに現在の色見本を表示
+    COLORREF previewColor = RGB(0, 0, 0);
+    bool showColorPreview = true;
+
+    switch (b.type)
+    {
+    case BlockType::SetBodyColor:
+        previewColor = b.bodyColor;
+        break;
+
+    case BlockType::SetGunColor:
+        previewColor = b.gunColor;
+        break;
+
+    case BlockType::SetRadarColor:
+        previewColor = b.radarColor;
+        break;
+
+    case BlockType::SetBulletColor:
+        previewColor = b.bulletColor;
+        break;
+
+    case BlockType::SetScanColor:
+        previewColor = b.scanColor;
+        break;
+
+    default:
+        showColorPreview = false;
+        break;
+    }
+
+    if (showColorPreview)
+    {
+        // ブロック右側に色見本を配置
+        RECT colorRect =
+        {
+            b.x + b.w - 34,
+            b.y + 17,
+            b.x + b.w - 12,
+            b.y + 39
+        };
+
+        HBRUSH colorBrush = CreateSolidBrush(previewColor);
+
+        FillRect(hdc, &colorRect, colorBrush);
+
+        DeleteObject(colorBrush);
+
+        // 色見本に白い枠を付ける
+        HBRUSH borderBrush =
+            CreateSolidBrush(RGB(255, 255, 255));
+
+        FrameRect(hdc, &colorRect, borderBrush);
+
+        DeleteObject(borderBrush);
+    }
 
     SelectObject(hdc, oldPen);
     SelectObject(hdc, oldBrush);
