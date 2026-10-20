@@ -227,33 +227,34 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
 
     if (hitIndex < 0)
     {
+        // 空白部分からドラッグしたら範囲選択
         selected = -1;
         selectedBlocks.clear();
         dragBlocks.clear();
 
         dragging = false;
         dragStarted = false;
+
+        // 画面座標ではなくワールド座標で範囲を記録
+        StartRangeSelection(world.x, world.y);
+
+        SetCapture(hwnd);
         return;
     }
 
-    // 複数選択中のブロックをクリックした場合は、
-   // その選択を維持する
+    // クリックしたブロックを選択
     bool clickedSelectedBlock =
         std::find(
             selectedBlocks.begin(),
             selectedBlocks.end(),
-            hitIndex
-        ) != selectedBlocks.end();
+            hitIndex) != selectedBlocks.end();
 
     if (!clickedSelectedBlock)
     {
-        selected = hitIndex;
         selectedBlocks.clear();
     }
-    else
-    {
-        selected = hitIndex;
-    }
+
+    selected = hitIndex;
 
     offsetX = world.x - blocks[hitIndex].x;
     offsetY = world.y - blocks[hitIndex].y;
@@ -265,28 +266,33 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
 
     if (!selectedBlocks.empty())
     {
-        // 複数選択したブロックを移動対象にする
         dragBlocks = selectedBlocks;
     }
     else
     {
-        // 単一選択の場合は選択ブロックと子孫を対象にする
-        dragBlocks.push_back(hitIndex);
+        int current = selected;
 
-        for (size_t i = 0; i < dragBlocks.size(); ++i)
+        for (int count = 0;
+            current >= 0 &&
+            count < static_cast<int>(blocks.size());
+            ++count)
         {
-            int child = GetChild(dragBlocks[i]);
-
-            if (child >= 0)
-                dragBlocks.push_back(child);
+            dragBlocks.push_back(current);
+            current = GetChild(current);
         }
     }
 
     std::sort(dragBlocks.begin(), dragBlocks.end());
+
     dragBlocks.erase(
         std::unique(dragBlocks.begin(), dragBlocks.end()),
-        dragBlocks.end()
-    );
+        dragBlocks.end());
+
+    std::sort(dragBlocks.begin(), dragBlocks.end());
+
+    dragBlocks.erase(
+        std::unique(dragBlocks.begin(), dragBlocks.end()),
+        dragBlocks.end());
 
     dragging = true;
     dragStarted = false;
@@ -294,17 +300,26 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
     SetCapture(hwnd);
 }
 
-
-
 void BlockManager::OnMouseMove(int x, int y)
 {
-    // カーソルの位置を毎回更新する
     mouseX = x;
-
     mouseY = y;
 
-    if (!dragging || selected < 0)
+    // 範囲選択中なら、矩形を更新する
+    if (selectingRange)
+    {
+        POINT world = ScreenToWorld(x, y);
+
+        UpdateRangeSelection(world.x, world.y);
         return;
+    }
+
+    if (!dragging ||
+        selected < 0 ||
+        selected >= static_cast<int>(blocks.size()))
+    {
+        return;
+    }
 
     POINT world = ScreenToWorld(x, y);
 
@@ -318,10 +333,10 @@ void BlockManager::OnMouseMove(int x, int y)
     {
         SaveUndoState();
 
-        // ドラッグするブロックの親接続を解除する
-        // 単一選択時のみ、従来の接続解除動作を行う
         if (selectedBlocks.empty())
+        {
             parent[selected] = -1;
+        }
 
         dragStarted = true;
     }
@@ -340,17 +355,25 @@ void BlockManager::OnMouseMove(int x, int y)
     lastY = world.y;
 }
 
+void BlockManager::OnMouseUp(HWND hwnd)
+{
+    if (selectingRange)
+    {
+        POINT world = ScreenToWorld(mouseX, mouseY);
 
-void BlockManager::OnMouseUp(HWND hwnd) {
-    if (dragging && selected >= 0 && dragStarted) { SnapSelectedBlock(); }
+        UpdateRangeSelection(world.x, world.y);
+        EndRangeSelection();
+    }
+    else if (dragging && selected >= 0 && dragStarted)
+    {
+        SnapSelectedBlock();
+    }
 
     dragging = false;
     dragStarted = false;
 
     if (GetCapture() == hwnd)
         ReleaseCapture();
-
-
 }
 
 // ============================================================ 
@@ -403,46 +426,63 @@ int BlockManager::GetChild(int blockIndex) const {
 // ブロックの接続 
 // ============================================================
 
+
 void BlockManager::SnapSelectedBlock()
 {
-    if (selected < 0 ||
-        selected >= static_cast<int>(blocks.size()))
-    {
+    const int count = static_cast<int>(blocks.size());
+
+    if (selected < 0 || selected >= count)
         return;
+
+    // 選択ブロックと、その下の子孫だけを収集する
+    std::vector<int> movingBlocks;
+    int current = selected;
+
+    for (int step = 0;
+        current >= 0 && current < count && step < count;
+        ++step)
+    {
+        movingBlocks.push_back(current);
+        current = GetChild(current);
     }
 
-    Block& moving = blocks[selected];
+    if (movingBlocks.empty())
+        return;
+
+    const int firstBlock = movingBlocks.front();
+    const int lastBlock = movingBlocks.back();
+
+    std::vector<bool> isMoving(count, false);
+
+    for (int index : movingBlocks)
+        isMoving[index] = true;
 
     int bestTarget = -1;
     int bestDistance = SNAP_DISTANCE + 1;
-    int bestY = moving.y;
-
-    // 接続位置：0 = 下側に接続、1 = 上側に接続
+    int bestY = 0;
     int bestSide = -1;
 
-    for (int i = 0;
-        i < static_cast<int>(blocks.size());
-        ++i)
+    // 接続先のブロックを探す
+    for (int i = 0; i < count; ++i)
     {
-        if (i == selected)
-            continue;
-
-        if (IsDescendant(i, selected))
+        if (isMoving[i])
             continue;
 
         const Block& target = blocks[i];
 
-        // 横方向の位置が近いブロックだけを対象にする
-        if (std::abs(moving.x - target.x) >= COLUMN_DISTANCE)
-            continue;
-
-        // 接続候補①：相手ブロックの下側
-        if (!HasChild(i))
+        // ----------------------------------------
+        // ① 移動グループを C の下側に接続
+        // グループ先頭を C の子にする
+        // ----------------------------------------
+        if (!HasChild(i) &&
+            std::abs(blocks[firstBlock].x - target.x)
+            < COLUMN_DISTANCE)
         {
             int expectedY =
                 target.y + target.h - TAB_HEIGHT;
 
-            int distance = std::abs(moving.y - expectedY);
+            int distance =
+                std::abs(blocks[firstBlock].y - expectedY);
 
             if (distance <= SNAP_DISTANCE &&
                 distance < bestDistance)
@@ -454,50 +494,74 @@ void BlockManager::SnapSelectedBlock()
             }
         }
 
-        // 接続候補②：相手ブロックの上側
-        int expectedY =
-            target.y - moving.h + TAB_HEIGHT;
-
-        int distance = std::abs(moving.y - expectedY);
-
-        if (distance <= SNAP_DISTANCE &&
-            distance < bestDistance)
+        // ----------------------------------------
+        // ② 移動グループを C の上側に接続
+        // C をグループ末端の子にする
+        // ----------------------------------------
+        if (std::abs(blocks[lastBlock].x - target.x)
+            < COLUMN_DISTANCE)
         {
-            bestTarget = i;
-            bestDistance = distance;
-            bestY = expectedY;
-            bestSide = 1;
+            int expectedY =
+                target.y - blocks[lastBlock].h + TAB_HEIGHT;
+
+            int distance =
+                std::abs(blocks[lastBlock].y - expectedY);
+
+            if (distance <= SNAP_DISTANCE &&
+                distance < bestDistance)
+            {
+                bestTarget = i;
+                bestDistance = distance;
+                bestY = expectedY;
+                bestSide = 1;
+            }
         }
     }
 
-    if (bestTarget >= 0)
+    if (bestTarget < 0)
+        return;
+
+    // 接続位置に合わせてグループ全体を移動
+    const int attachBlock =
+        (bestSide == 0) ? firstBlock : lastBlock;
+
+    const int dx =
+        blocks[bestTarget].x - blocks[attachBlock].x;
+
+    const int dy =
+        bestY - blocks[attachBlock].y;
+
+    for (int index : movingBlocks)
     {
-        int dx = blocks[bestTarget].x - moving.x;
-        int dy = bestY - moving.y;
+        blocks[index].x += dx;
+        blocks[index].y += dy;
+    }
 
-        for (int i = 0;
-            i < static_cast<int>(blocks.size());
-            ++i)
+    if (bestSide == 0)
+    {
+        // C → A → B
+        parent[firstBlock] = bestTarget;
+    }
+    else
+    {
+        // A → B → C
+        // C がもともと別のブロックの子なら、
+        // その接続先をグループ先頭につなぎ替える
+        int oldParent = parent[bestTarget];
+
+        parent[bestTarget] = lastBlock;
+
+        if (oldParent >= 0 && !isMoving[oldParent])
         {
-            if (i == selected || IsDescendant(i, selected))
-            {
-                blocks[i].x += dx;
-                blocks[i].y += dy;
-            }
+            parent[firstBlock] = oldParent;
         }
-
-        // 上側・下側どちらから接続しても親子関係を登録
-        parent[selected] = bestTarget;
-
-        // 上側接続の場合、移動ブロックを親にする必要があるため、
-        // 接続関係を逆向きにする
-        if (bestSide == 1)
+        else
         {
-            parent[bestTarget] = selected;
-            parent[selected] = -1;
+            parent[firstBlock] = -1;
         }
     }
 }
+
 
 // ============================================================ 
 // 実行順序
@@ -927,7 +991,6 @@ bool BlockManager::CopySelectedBlock() {
     else if (selected >= 0 &&
         selected < static_cast<int>(blocks.size()))
     {
-        // �P�̑I���̏ꍇ�͎q�����R�s�[����
         selection.push_back(selected);
 
         for (size_t i = 0; i < selection.size(); ++i)

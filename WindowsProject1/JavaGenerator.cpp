@@ -202,6 +202,51 @@ bool ExportJava(const std::vector<Block>& blocks)
                 "            setTurnRight(45);\n"
                 "            execute();\n";
             break;
+
+        case BlockType::SetBodyColor:
+            code +=
+                "            setBodyColor(new Color(" +
+                std::to_string(GetRValue(b.bodyColor)) + ", " +
+                std::to_string(GetGValue(b.bodyColor)) + ", " +
+                std::to_string(GetBValue(b.bodyColor)) +
+                "));\n";
+            break;
+
+        case BlockType::SetGunColor:
+            code +=
+                "            setGunColor(new Color(" +
+                std::to_string(GetRValue(b.gunColor)) + ", " +
+                std::to_string(GetGValue(b.gunColor)) + ", " +
+                std::to_string(GetBValue(b.gunColor)) +
+                "));\n";
+            break;
+
+        case BlockType::SetRadarColor:
+            code +=
+                "            setRadarColor(new Color(" +
+                std::to_string(GetRValue(b.radarColor)) + ", " +
+                std::to_string(GetGValue(b.radarColor)) + ", " +
+                std::to_string(GetBValue(b.radarColor)) +
+                "));\n";
+            break;
+
+        case BlockType::SetBulletColor:
+            code +=
+                "            setBulletColor(new Color(" +
+                std::to_string(GetRValue(b.bulletColor)) + ", " +
+                std::to_string(GetGValue(b.bulletColor)) + ", " +
+                std::to_string(GetBValue(b.bulletColor)) +
+                "));\n";
+            break;
+
+        case BlockType::SetScanColor:
+            code +=
+                "            setScanColor(new Color(" +
+                std::to_string(GetRValue(b.scanColor)) + ", " +
+                std::to_string(GetGValue(b.scanColor)) + ", " +
+                std::to_string(GetBValue(b.scanColor)) +
+                "));\n";
+            break;
         }
     }
 
