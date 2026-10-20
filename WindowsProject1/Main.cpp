@@ -93,7 +93,8 @@ constexpr float INITIAL_VIEW_Y = 0.0f;
 // 画面設定
 // ============================================================
 
-constexpr int CANVAS_LEFT = 420;
+//constexpr int CANVAS_LEFT = 320;
+int g_canvasLeft = 230;
 constexpr int CANVAS_TOP = 50;
 
 // ============================================================
@@ -457,7 +458,7 @@ void InvalidateCanvas()
     GetClientRect(g_mainWindow, &rc);
 
     RECT canvasRect = {
-        CANVAS_LEFT,
+        g_canvasLeft,
         CANVAS_TOP,
         rc.right,
         rc.bottom
@@ -560,32 +561,61 @@ void SelectCategory(BlockCategory category)
         return;
     }
 
+    // ★ すでに同じカテゴリが選択されている状態でクリックされた場合は、リストを閉じて終了する（トグル動作）
+    if (g_selectedCategory == category && g_blockList && IsWindowVisible(g_blockList))
+    {
+        ShowWindow(g_blockList, SW_HIDE);
+        g_showBlockList = false;
+
+        // 元の位置に戻してブロック群も一緒に左へ戻す
+        int oldLeft = g_canvasLeft;
+        g_canvasLeft = 230;
+        int delta = g_canvasLeft - oldLeft;
+        g_viewX += delta;
+        UpdateView();
+
+
+        InvalidateEditor();
+        return;
+    }
+
     g_selectedCategory = category;
+
+    bool wasClosed = !IsWindowVisible(g_blockList);
 
     // 選択したカテゴリのブロックを一覧に表示
     InitializeBlockList(g_blockList);
 
-    // 押されたカテゴリボタンのウィンドウ位置（Y座標）を取得してリストを配置する
-    int index = static_cast<int>(category);
-    if (g_categoryButtons[index] && g_blockList)
+    // 常に一番上のカテゴリボタン（移動＝index 0）の位置を基準にしてリストを配置する
+    if (g_categoryButtons[0] && g_blockList)
     {
         RECT btnRc{};
-        GetWindowRect(g_categoryButtons[index], &btnRc);
+        GetWindowRect(g_categoryButtons[0], &btnRc);
 
         // スクリーン座標をメインウィンドウ（クライアント座標）に変換
-        POINT ptTopLeft = { btnRc.right + 5, btnRc.top }; // ボタンの右隣に表示
+        POINT ptTopLeft = { btnRc.right + 5, btnRc.top };
         ScreenToClient(g_mainWindow, &ptTopLeft);
 
-        // リストボックスの位置とサイズを移動して表示（幅180、高さ220など）
+        // リストボックスの位置とサイズを設定して表示
         SetWindowPos(
             g_blockList,
             HWND_TOP,
             ptTopLeft.x,
             ptTopLeft.y,
-            180,
-            220,
+            220, // 幅
+            220, // 高さ
             SWP_SHOWWINDOW
         );
+
+        // ★ リストが開いている間は、キャンバスの開始位置を右に広げる（リストに被らないようにする）
+        if (wasClosed)
+        {
+            int oldLeft = g_canvasLeft;
+            g_canvasLeft = 370;
+            int delta = g_canvasLeft - oldLeft;
+            g_viewX += delta;
+            UpdateView();
+        }
     }
 
     g_showBlockList = true;
@@ -617,7 +647,7 @@ bool IsCanvasPoint(POINT p)
     GetClientRect(g_mainWindow, &client);
 
     return
-        p.x >= CANVAS_LEFT &&
+        p.x >= g_canvasLeft &&
         p.y >= CANVAS_TOP &&
         p.x < client.right &&
         p.y < client.bottom;
@@ -629,7 +659,7 @@ bool IsBlackArea(POINT p)
     GetClientRect(g_mainWindow, &client);
 
     RECT canvasRect = {
-        CANVAS_LEFT,
+        g_canvasLeft,
         CANVAS_TOP,
         client.right - 20,
         client.bottom - 20
@@ -1545,6 +1575,8 @@ bool TryStartNumericEdit(HWND hwnd, POINT screenPoint, POINT worldPoint)
     return false;
 }
 
+
+
 // ============================================================
 // 新しい画面レイアウト用の描画処理
 // Main.cpp の WndProc より上に追加
@@ -1868,7 +1900,7 @@ Bitmap* LoadBitmapFromExeFolder(const wchar_t* filename)
 
 void DrawNewLayout(HDC hdc, int width, int height)
 {
-    int leftPanelWidth = 220;
+    int leftPanelWidth = g_canvasLeft;
     int rightPanelWidth = 320;
     int canvasLeft = leftPanelWidth;
     int canvasRight = width - rightPanelWidth;
@@ -2345,7 +2377,7 @@ LRESULT CALLBACK WndProc(
             if (notification == BN_CLICKED)
             {
                 POINT center = {
-                    CANVAS_LEFT + 100,
+                    g_canvasLeft + 100,
                     CANVAS_TOP + 100
                 };
 
@@ -2626,13 +2658,22 @@ LRESULT CALLBACK WndProc(
             GET_Y_LPARAM(lParam)
         };
 
-        //キャンバスやツールバー以外（左側の余白など）をクリックしたらリストボックスを閉じる
+        //キャンバス側をクリックしたら、開いていたリストボックスを自動で閉じる
         if (g_blockList && IsWindowVisible(g_blockList))
         {
-            if (!IsCanvasPoint(p) && p.y > 50)
+            if (IsCanvasPoint(p))
             {
                 ShowWindow(g_blockList, SW_HIDE);
                 g_showBlockList = false;
+
+                // ★ リストを閉じたら、キャンバスの位置を元に戻す
+                g_canvasLeft = 230;
+
+                UpdateView();
+
+                InvalidateRect(hwnd, nullptr, TRUE); // 再描画を反映
+
+                return 0;
             }
         }
 
@@ -2937,7 +2978,7 @@ LRESULT CALLBACK WndProc(
 
         // ② キャンバスの範囲
         RECT canvasRect = {
-            CANVAS_LEFT,
+            g_canvasLeft,
             CANVAS_TOP,
             rc.right - 20,
             rc.bottom - 20
@@ -2996,7 +3037,7 @@ LRESULT CALLBACK WndProc(
 
         TextOutW(
             memDC,
-            CANVAS_LEFT,
+            g_canvasLeft,
             15,
             zoomText,
             static_cast<int>(wcslen(zoomText))
