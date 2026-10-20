@@ -326,7 +326,7 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::Repeat:
         return L"繰り返す  " +
-            std::to_wstring(b.repeatCount) + L" 回";
+            std::to_wstring(b.repeatCount) + L"  回";
 
     case BlockType::EndRepeat:
         return L"繰り返しここまで";
@@ -614,7 +614,6 @@ bool HitBlock(const Block& b, int x, int y)
 // ============================================================
 // ブロック描画
 // ============================================================
-
 void DrawBlock(HDC hdc, const Block& b, bool glowing)
 {
     if (!hdc)
@@ -622,24 +621,16 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
     const int tabH = 8;
 
-
-    // リストと同じカテゴリ色を使用する
-    // ホバー時は、その色を明るくする
     COLORREF blockColor = GetBlockCategoryColor(b.type);
 
     if (glowing)
-    {
         blockColor = MakeBrighterColor(blockColor);
-    }
 
     HBRUSH brush = CreateSolidBrush(blockColor);
-
     if (!brush)
         return;
 
-    HPEN pen =
-        CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
-
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
     if (!pen)
     {
         DeleteObject(brush);
@@ -649,18 +640,141 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     HGDIOBJ oldBrush = SelectObject(hdc, brush);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
 
+    // ========================================================
+    // Repeat：C字型ブロックと内側上部の下向き突起
+    // ========================================================
+    if (b.type == BlockType::Repeat)
+    {
+        const int x = b.x;
+        const int y = b.y;
+        const int w = b.w;
+        const int h = (std::max)(b.h, 120);
+
+        const int tabW = 40;
+        const int tabX = 24;
+        const int wallW = 24;
+        const int headerH = 38;
+        const int bottomH = 30;
+
+        POINT points[] =
+        {
+            // 上側の接続用タブ
+            { x, y },
+            { x + tabX, y },
+            { x + tabX, y + tabH },
+            { x + tabX + tabW, y + tabH },
+            { x + tabX + tabW, y },
+
+            // 上側の外枠
+            { x + w, y },
+            { x + w, y + headerH },
+
+            // 内側の左壁
+            { x + wallW, y + headerH },
+            { x + wallW, y + h - bottomH },
+
+            // 下側の中身のへこみ（変更なし）
+            { x + wallW + 24, y + h - bottomH },
+            { x + wallW + 24, y + h - bottomH + 8 },
+            { x + wallW + 64, y + h - bottomH + 8 },
+            { x + wallW + 64, y + h - bottomH },
+
+            // 下側の横棒の右端
+            { x + w, y + h - bottomH },
+            { x + w, y + h },
+
+            // 下側の接続用タブを下向きの突起にする
+            { x + tabX + tabW, y + h },
+            { x + tabX + tabW, y + h + tabH },
+            { x + tabX, y + h + tabH },
+            { x + tabX, y + h },
+
+            // 左側の外枠
+            { x, y + h }
+        };
+
+        // ブロック本体を描画
+        Polygon(
+            hdc,
+            points,
+            sizeof(points) / sizeof(points[0])
+        );
+
+        // 内側を背景色で塗る
+        HBRUSH bgBrush = CreateSolidBrush(RGB(245, 245, 245));
+
+        if (bgBrush)
+        {
+            RECT inner =
+            {
+                x + wallW + 1,
+                y + headerH + 1,
+                x + w - 1,
+                y + h - bottomH - 1
+            };
+
+            FillRect(hdc, &inner, bgBrush);
+            DeleteObject(bgBrush);
+        }
+
+        // 内側上部の接続用タブ
+        POINT innerTab[] =
+        {
+            { x + wallW + 24, y + headerH - 1 },
+            { x + wallW + 64, y + headerH - 1 },
+            { x + wallW + 64, y + headerH + tabH },
+            { x + wallW + 24, y + headerH + tabH }
+        };
+
+        Polygon(
+            hdc,
+            innerTab,
+            sizeof(innerTab) / sizeof(innerTab[0])
+        );
+
+        // ブロック名
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(255, 255, 255));
+
+        const std::wstring repeatName =
+            L"繰り返し " + std::to_wstring(b.repeatCount) + L" 回";
+
+        RECT textRect =
+        {
+            x + 12,
+            y + 8,
+            x + w - 8,
+            y + headerH
+        };
+
+        DrawTextW(
+            hdc,
+            repeatName.c_str(),
+            -1,
+            &textRect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS
+        );
+
+        DeleteObject(pen);
+        DeleteObject(brush);
+
+        return;
+    }
     
+    // ========================================================
+    // 通常ブロック
+    // ========================================================
 
     POINT points[] =
     {
-        { b.x,          b.y },
-        { b.x + 24,     b.y },
-        { b.x + 24,     b.y + tabH },
-        { b.x + 64,     b.y + tabH },
-        { b.x + 64,     b.y },
-        { b.x + b.w,    b.y },
-        { b.x + b.w,    b.y + b.h },
-        { b.x,          b.y + b.h }
+        { b.x,       b.y },
+        { b.x + 24,  b.y },
+        { b.x + 24,  b.y + tabH },
+        { b.x + 64,  b.y + tabH },
+        { b.x + 64,  b.y },
+        { b.x + b.w, b.y },
+        { b.x + b.w, b.y + b.h },
+        { b.x,       b.y + b.h }
     };
 
     Polygon(
@@ -669,19 +783,18 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         sizeof(points) / sizeof(points[0])
     );
 
-   
-    // 下側の四角い突起
-RECT tab =
-{
-    b.x + 24,           // 左端
-    b.y + b.h - 1,      // 上端
-    b.x + 64,           // 右端
-    b.y + b.h + tabH    // 下端
-};
+    // 下側の突起
+    RECT tab =
+    {
+        b.x + 24,
+        b.y + b.h - 1,
+        b.x + 64,
+        b.y + b.h + tabH
+    };
 
-FillRect(hdc, &tab, brush);
+    FillRect(hdc, &tab, brush);
 
-
+    // ブロック名
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 255, 255));
 
@@ -704,7 +817,7 @@ FillRect(hdc, &tab, brush);
         DT_SINGLELINE | DT_END_ELLIPSIS
     );
 
-    // 色変更ブロックに現在の色見本を表示
+    // 色変更ブロックの色見本
     COLORREF previewColor = RGB(0, 0, 0);
     bool showColorPreview = true;
 
@@ -737,7 +850,6 @@ FillRect(hdc, &tab, brush);
 
     if (showColorPreview)
     {
-        // ブロック右側に色見本を配置
         RECT colorRect =
         {
             b.x + b.w - 34,
@@ -748,19 +860,23 @@ FillRect(hdc, &tab, brush);
 
         HBRUSH colorBrush = CreateSolidBrush(previewColor);
 
-        FillRect(hdc, &colorRect, colorBrush);
+        if (colorBrush)
+        {
+            FillRect(hdc, &colorRect, colorBrush);
+            DeleteObject(colorBrush);
+        }
 
-        DeleteObject(colorBrush);
-
-        // 色見本に白い枠を付ける
         HBRUSH borderBrush =
             CreateSolidBrush(RGB(255, 255, 255));
 
-        FrameRect(hdc, &colorRect, borderBrush);
-
-        DeleteObject(borderBrush);
+        if (borderBrush)
+        {
+            FrameRect(hdc, &colorRect, borderBrush);
+            DeleteObject(borderBrush);
+        }
     }
 
+    // GDIオブジェクトを元に戻して解放
     SelectObject(hdc, oldPen);
     SelectObject(hdc, oldBrush);
 

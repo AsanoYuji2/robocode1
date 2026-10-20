@@ -133,6 +133,8 @@ public:
 
     bool IsSelectingRange() const;
 
+    const std::vector<int>& GetRepeatBodies() const;
+
 private:
     // ドラッグ開始時に移動対象となるブロックのインデックスを保存する
     std::vector<int> dragBlocks;
@@ -208,6 +210,8 @@ private:
 
         // ブロック間の親子関係
         std::vector<int> parent;
+
+        std::vector<int> repeatBody;
     };
 
     // 操作を取り消すための状態履歴
@@ -239,4 +243,8 @@ private:
 
     // 現在の状態を Undo 履歴に保存する
     void SaveUndoState();
+
+    // Repeatブロックの内側に接続されたブロックの先頭。
+    // repeatBody[i] == -1 の場合、内側ブロックなし。
+    std::vector<int> repeatBody;
 };
