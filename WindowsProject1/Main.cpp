@@ -8,6 +8,7 @@
 #include <cwchar>
 
 #include <commdlg.h>
+#include <gdiplus.h>
 
 #include "BlockManager.h"
 #include "JavaGenerator.h"
@@ -15,6 +16,9 @@
 #include"BlockColors.h"
 
 #pragma comment(lib, "Comdlg32.lib")
+#pragma comment(lib, "gdiplus.lib")
+
+using namespace Gdiplus;
 
 // ============================================================
 // ブロック管理
@@ -38,8 +42,17 @@ HWND g_redoButton = nullptr;
 int g_numericEditBlockIndex = -1;
 int g_numericEditField = 0; // 1=distance, 2=repeatCount, 3=waitSeconds, 4=conditionValue, 5=value
 WNDPROC g_oldNumericEditProc = nullptr;
-
 WNDPROC g_oldListProc = nullptr;
+
+ULONG_PTR g_gdiplusToken = 0;
+
+// ツールバーボタン用の GDI+ Bitmap 画像ハンドル
+HBITMAP g_hBmpNew = nullptr;
+HBITMAP g_hBmpOpen = nullptr;
+HBITMAP g_hBmpSave = nullptr;
+HBITMAP g_hBmpUndo = nullptr;
+HBITMAP g_hBmpRedo = nullptr;
+HBITMAP g_hBmpRun = nullptr;
 
 // ============================================================
 // 状態管理
@@ -107,6 +120,14 @@ constexpr int ID_SHORTCUT_DELETE = 1017;
 constexpr int ID_UNDO = 1018;
 constexpr int ID_REDO = 1019;
 constexpr int ID_HELP_BUTTON = 1008;
+// ツールバー用ID
+constexpr int ID_TOOL_NEW = 2101;
+constexpr int ID_TOOL_OPEN = 2102;
+constexpr int ID_TOOL_SAVE = 2103;
+constexpr int ID_TOOL_UNDO = 2104;
+constexpr int ID_TOOL_REDO = 2105;
+constexpr int ID_TOOL_RUN = 2106;
+constexpr int ID_TOOL_JAVA = 2107;
 
 // アクセラレータテーブル
 HACCEL g_hAccel = nullptr;
@@ -1505,6 +1526,395 @@ bool TryStartNumericEdit(HWND hwnd, POINT screenPoint, POINT worldPoint)
     return false;
 }
 
+// ============================================================
+// 新しい画面レイアウト用の描画処理
+// Main.cpp の WndProc より上に追加
+// ============================================================
+
+void DrawPanel(
+    HDC hdc,
+    int left,
+    int top,
+    int right,
+    int bottom,
+    COLORREF color)
+{
+    RECT rc{ left, top, right, bottom };
+
+    HBRUSH brush = CreateSolidBrush(color);
+    FillRect(hdc, &rc, brush);
+    DeleteObject(brush);
+}
+
+void DrawLabel(
+    HDC hdc,
+    const wchar_t* text,
+    RECT rc,
+    COLORREF color,
+    int fontSize,
+    bool bold = false)
+{
+    HFONT font = CreateFontW(
+        -fontSize,
+        0,
+        0,
+        0,
+        bold ? FW_BOLD : FW_NORMAL,
+        FALSE,
+        FALSE,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        L"Meiryo UI"
+    );
+
+    HFONT oldFont =
+        (HFONT)SelectObject(hdc, font);
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, color);
+
+    DrawTextW(
+        hdc,
+        text,
+        -1,
+        &rc,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE
+    );
+
+    SelectObject(hdc, oldFont);
+    DeleteObject(font);
+}
+
+// ============================================================
+// 上部ツールバーのボタン描画
+// ============================================================
+void DrawToolbarButton(
+    HDC hdc,
+    int x,
+    int y,
+    int width,
+    int height,
+    const wchar_t* text,
+    COLORREF color)
+{
+    RECT rc = {
+        x,
+        y,
+        x + width,
+        y + height
+    };
+
+    HBRUSH brush = CreateSolidBrush(color);
+    FillRect(hdc, &rc, brush);
+    DeleteObject(brush);
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 255, 255));
+
+    DrawTextW(
+        hdc,
+        text,
+        -1,
+        &rc,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE
+    );
+}
+
+// ============================================================
+// キャンバスのドット背景
+// ============================================================
+void DrawCanvasGrid(
+    HDC hdc,
+    const RECT& canvasRect)
+{
+    const int gridSize = 20;
+
+    HPEN pen = CreatePen(
+        PS_SOLID,
+        1,
+        RGB(218, 225, 235)
+    );
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+
+    // 20ピクセル間隔で点を描画
+    for (
+        int y = canvasRect.top + 10;
+        y < canvasRect.bottom;
+        y += gridSize)
+    {
+        for (
+            int x = canvasRect.left + 10;
+            x < canvasRect.right;
+            x += gridSize)
+        {
+            SetPixelV(
+                hdc,
+                x,
+                y,
+                RGB(195, 207, 222)
+            );
+        }
+    }
+
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+}
+
+// ============================================================
+// キャンバス内タブ（「メイン」「関数」「設定」）の描画
+// ============================================================
+void DrawCanvasTabs(HDC hdc, int canvasLeft, int top)
+{
+    const wchar_t* tabs[] = { L"メイン", L"関数", L"設定" };
+    int tabWidth = 80;
+    int tabHeight = 32;
+
+    for (int i = 0; i < 3; ++i) {
+        int x = canvasLeft + 15 + (i * (tabWidth + 4));
+        RECT tabRc{ x, top + 10, x + tabWidth, top + 10 + tabHeight };
+
+        bool isSelected = (i == 0); // メインを選択中
+        COLORREF bg = isSelected ? RGB(59, 130, 246) : RGB(229, 231, 235);
+        COLORREF fg = isSelected ? RGB(255, 255, 255) : RGB(75, 85, 99);
+
+        HBRUSH b = CreateSolidBrush(bg);
+        FillRect(hdc, &tabRc, b);
+        DeleteObject(b);
+
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, fg);
+        DrawTextW(hdc, tabs[i], -1, &tabRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+}
+
+// 右側パネル全体（プレビュー、ステータス、ログ）の描画
+void DrawRightPanel(HDC hdc, int panelLeft, int top, int panelRight, int bottom)
+{
+    int width = panelRight - panelLeft;
+
+    // 背景
+    DrawPanel(hdc, panelLeft, top, panelRight, bottom, RGB(243, 244, 246));
+
+    // --- 1. ロボットの動作確認（プレビューエリア） ---
+    RECT headerRect{ panelLeft + 15, top + 10, panelRight - 15, top + 35 };
+    DrawLabel(hdc, L"ロボットの動作確認", headerRect, RGB(31, 41, 55), 14, true);
+
+    int previewMargin = 15;
+    int previewWidth = width - (previewMargin * 2);
+    int previewHeight = 220;
+    RECT previewRc{ panelLeft + previewMargin, top + 40, panelLeft + previewMargin + previewWidth, top + 40 + previewHeight };
+
+    // プレビュー背景（ダークブルー）
+    HBRUSH bgBrush = CreateSolidBrush(RGB(15, 23, 42));
+    FillRect(hdc, &previewRc, bgBrush);
+    DeleteObject(bgBrush);
+
+    // プレビューのグリッド線
+    HPEN gridPen = CreatePen(PS_SOLID, 1, RGB(30, 41, 59));
+    HPEN oldPen = (HPEN)SelectObject(hdc, gridPen);
+    for (int x = previewRc.left; x < previewRc.right; x += 25) {
+        MoveToEx(hdc, x, previewRc.top, nullptr);
+        LineTo(hdc, x, previewRc.bottom);
+    }
+    for (int y = previewRc.top; y < previewRc.bottom; y += 25) {
+        MoveToEx(hdc, previewRc.left, y, nullptr);
+        LineTo(hdc, previewRc.right, y);
+    }
+    SelectObject(hdc, oldPen);
+    DeleteObject(gridPen);
+
+    // --- 2. ステータスカード表示（ラウンド・エネルギー・残り敵数・時間） ---
+    int statusTop = previewRc.bottom + 10;
+    int cardGaps = 8;
+    int cardWidth = (previewWidth - (cardGaps * 3)) / 4;
+    int cardHeight = 48;
+
+    const wchar_t* titles[] = { L"ラウンド", L"エネルギー", L"残り敵数", L"時間" };
+    const wchar_t* values[] = { L"1", L"100", L"1", L"12.5s" };
+
+    for (int i = 0; i < 4; ++i) {
+        int cLeft = previewRc.left + i * (cardWidth + cardGaps);
+        RECT cRc{ cLeft, statusTop, cLeft + cardWidth, statusTop + cardHeight };
+
+        // 白背景のカード
+        HBRUSH cBrush = CreateSolidBrush(RGB(255, 255, 255));
+        FillRect(hdc, &cRc, cBrush);
+        DeleteObject(cBrush);
+
+        RECT tRc{ cLeft, statusTop + 4, cLeft + cardWidth, statusTop + 20 };
+        RECT vRc{ cLeft, statusTop + 22, cLeft + cardWidth, statusTop + 42 };
+
+        // 中央揃えテキスト
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(100, 116, 139));
+        DrawTextW(hdc, titles[i], -1, &tRc, DT_CENTER | DT_SINGLELINE);
+
+        SetTextColor(hdc, RGB(30, 41, 59));
+        DrawTextW(hdc, values[i], -1, &vRc, DT_CENTER | DT_SINGLELINE);
+    }
+
+    // --- 3. ログエリア ---
+    int logTop = statusTop + cardHeight + 15;
+    RECT logTitleRc{ panelLeft + 15, logTop, panelRight - 15, logTop + 25 };
+    DrawLabel(hdc, L"∨  ログ", logTitleRc, RGB(51, 65, 85), 13, true);
+
+    RECT logRc{ panelLeft + 15, logTop + 28, panelRight - 15, bottom - 15 };
+    HBRUSH logBg = CreateSolidBrush(RGB(255, 255, 255));
+    FillRect(hdc, &logRc, logBg);
+    DeleteObject(logBg);
+
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(226, 232, 240));
+    HGDIOBJ oldB = SelectObject(hdc, borderPen);
+    Rectangle(hdc, logRc.left, logRc.top, logRc.right, logRc.bottom);
+    SelectObject(hdc, oldB);
+    DeleteObject(borderPen);
+
+    // サンプルログの出力
+    const wchar_t* logs[] = {
+        L"> Javaファイルを生成しました",
+        L"> コンパイルに成功しました",
+        L"> Robocodeを起動しています...",
+        L"> ゲーム開始"
+    };
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(71, 85, 105));
+    for (int i = 0; i < 4; ++i) {
+        RECT lTextRc{ logRc.left + 10, logRc.top + 10 + (i * 20), logRc.right - 10, logRc.top + 30 + (i * 20) };
+        DrawTextW(hdc, logs[i], -1, &lTextRc, DT_LEFT | DT_SINGLELINE);
+    }
+}
+
+// ファイルから安全に GDI+ Bitmap を読み込むヘルパー関数
+Bitmap* LoadBitmapFromExeFolder(const wchar_t* filename)
+{
+    // 1. 実行ファイル（.exe）のフルパスを取得する
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+
+    // 2. ファイル名部分を削って、フォルダのパスだけにする
+    wchar_t* lastSlash = wcsrchr(exePath, L'\\');
+    if (lastSlash) {
+        *(lastSlash + 1) = L'\0'; // 例: "C:\...\Debug\"
+    }
+
+    // 3. フォルダパスとファイル名を結合する (例: "C:\...\Debug\new.png")
+    std::wstring fullPath = std::wstring(exePath) + filename;
+
+    // 4. ファイルを開く
+    HANDLE hFile = CreateFileW(fullPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return nullptr;
+
+    DWORD fileSize = GetFileSize(hFile, nullptr);
+    if (fileSize == INVALID_FILE_SIZE) {
+        CloseHandle(hFile);
+        return nullptr;
+    }
+
+    // 5. メモリに読み込む
+    HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, fileSize);
+    if (!hGlobal) {
+        CloseHandle(hFile);
+        return nullptr;
+    }
+
+    void* pBuffer = GlobalLock(hGlobal);
+    DWORD bytesRead = 0;
+    ReadFile(hFile, pBuffer, fileSize, &bytesRead, nullptr);
+    GlobalUnlock(hGlobal);
+    CloseHandle(hFile);
+
+    // 6. GDI+ の Bitmap を生成
+    IStream* pStream = nullptr;
+    if (CreateStreamOnHGlobal(hGlobal, TRUE, &pStream) != S_OK) {
+        GlobalFree(hGlobal);
+        return nullptr;
+    }
+
+    Bitmap* pBmp = Bitmap::FromStream(pStream);
+    pStream->Release();
+
+    if (!pBmp || pBmp->GetLastStatus() != Ok) {
+        delete pBmp;
+        return nullptr;
+    }
+
+    return pBmp;
+}
+
+void DrawNewLayout(HDC hdc, int width, int height)
+{
+    int leftPanelWidth = 220;
+    int rightPanelWidth = 320;
+    int canvasLeft = leftPanelWidth;
+    int canvasRight = width - rightPanelWidth;
+
+    // 1. 全体の背景
+    DrawPanel(hdc, 0, 0, width, height, RGB(235, 240, 247));
+
+    // 2. 上部ツールバー
+    DrawPanel(hdc, 0, 0, width, 50, RGB(35, 43, 58));
+
+    RECT titleRect{ 16, 0, 230, 50 };
+    DrawLabel(
+        hdc,
+        L"Robocode Block Editor",
+        titleRect,
+        RGB(255, 255, 255),
+        18,
+        true
+    );
+
+    // 上部ツールバーのボタン（新規・開く・保存・元に戻す・やり直し・実行・Java出力）
+    /*DrawToolbarButton(hdc, 250, 9, 65, 32, L"新規", RGB(70, 82, 101));
+    DrawToolbarButton(hdc, 320, 9, 65, 32, L"開く", RGB(70, 82, 101));
+    DrawToolbarButton(hdc, 390, 9, 65, 32, L"保存", RGB(70, 82, 101));
+    DrawToolbarButton(hdc, 460, 9, 85, 32, L"元に戻す", RGB(70, 82, 101));
+    DrawToolbarButton(hdc, 550, 9, 75, 32, L"やり直し", RGB(70, 82, 101));
+    DrawToolbarButton(hdc, 635, 9, 65, 32, L"実行", RGB(38, 145, 85));
+    DrawToolbarButton(hdc, 710, 9, 90, 32, L"Java出力", RGB(45, 110, 190));*/
+
+    // 3. 左側パネル
+    DrawPanel(hdc, 0, 50, leftPanelWidth, height, RGB(247, 249, 252));
+
+    RECT categoryRect{ 12, 50, leftPanelWidth - 10, 85 };
+    DrawLabel(
+        hdc,
+        L"ブロックカテゴリ",
+        categoryRect,
+        RGB(45, 55, 72),
+        16,
+        true
+    );
+
+    // 4. 中央キャンバス背景
+    DrawPanel(hdc, canvasLeft, 50, canvasRight, height, RGB(250, 252, 255));
+
+    // キャンバス境界線
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(205, 215, 228));
+    HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+
+    MoveToEx(hdc, canvasLeft, 50, nullptr);
+    LineTo(hdc, canvasLeft, height);
+
+    MoveToEx(hdc, canvasRight, 50, nullptr);
+    LineTo(hdc, canvasRight, height);
+
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+
+    // 5. キャンバス内タブ描画
+    DrawCanvasTabs(hdc, canvasLeft, 50);
+
+    // 6. 右側情報・プレビュー・ログパネル描画
+    DrawRightPanel(hdc, canvasRight, 50, width, height);
+}
+
 LRESULT CALLBACK WndProc(
     HWND hwnd,
     UINT msg,
@@ -1550,135 +1960,41 @@ LRESULT CALLBACK WndProc(
             )
             );
 
-        // ブロック追加
-        g_addButton = CreateWindowW(
-            L"BUTTON",
-            L"追加",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            150, 270, 85, 35,
-            hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_ADD)),
-            GetModuleHandleW(nullptr),
-            nullptr
-        );
+        // ====================================================
+        // 上部ツールバー（画像表示用ボタン生成）
+        // ====================================================
+        CreateWindowW(L"BUTTON", L"新規", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 250, 9, 65, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_NEW)), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L"開く", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 320, 9, 65, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_OPEN)), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L"保存", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 390, 9, 65, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_SAVE)), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L"元に戻す", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 460, 9, 65, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_UNDO)), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L"やり直し", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 530, 9, 65, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_REDO)), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L"ロボットにする", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 600, 9, 130, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_RUN)), GetModuleHandleW(nullptr), nullptr);
 
-        // 削除モード
-        g_deleteButton = CreateWindowW(
-            L"BUTTON",
-            L"削除モード",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            245, 270, 100, 35,
-            hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_DELETE)),
-            GetModuleHandleW(nullptr),
-            nullptr
-        );
-
-        // 表示位置リセット
-        g_resetViewButton = CreateWindowW(
-            L"BUTTON",
-            L"表示リセット",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            150, 315, 195, 35,
-            hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_RESET_VIEW)),
-            GetModuleHandleW(nullptr),
-            nullptr
-        );
-
-        // 保存
-        CreateWindowW(
-            L"BUTTON",
-            L"保存",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            150, 360, 90, 35,
-            hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_SAVE)),
-            GetModuleHandleW(nullptr),
-            nullptr
-        );
-
-        // 読み込み
-        CreateWindowW(
-            L"BUTTON",
-            L"読み込み",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            250, 360, 95, 35,
-            hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_LOAD)),
-            GetModuleHandleW(nullptr),
-            nullptr
-        );
-
-        g_helpButton = CreateWindowW(
-            L"BUTTON",
-            L"操作方法",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            150, 405, 195, 35,
-            hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_HELP_BUTTON)),
-            GetModuleHandleW(nullptr),
-            nullptr
-        );
-
-        // 元に戻す
-        g_undoButton = CreateWindowW(
-            L"BUTTON",
-            L"元に戻す",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            150, 450, 95, 35,
-            hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_UNDO)),
-            GetModuleHandleW(nullptr),
-            nullptr
-        );
-
-        // やり直し
-        g_redoButton = CreateWindowW(
-            L"BUTTON",
-            L"やり直し",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            250, 450, 95, 35,
-            hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_REDO)),
-            GetModuleHandleW(nullptr),
-            nullptr
-        );
+        // BMP 画像のロード
+        g_hBmpNew = (HBITMAP)LoadImageW(nullptr, L"new.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpOpen = (HBITMAP)LoadImageW(nullptr, L"open.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpSave = (HBITMAP)LoadImageW(nullptr, L"save.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpUndo = (HBITMAP)LoadImageW(nullptr, L"undo.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpRedo = (HBITMAP)LoadImageW(nullptr, L"redo.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpRun = (HBITMAP)LoadImageW(nullptr, L"run.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
 
         UpdateButtonColors();
-
-        return 0;
+        return 0; // ← WM_CREATE の最後に 1 回だけ return 0 します
     }
 
     // ========================================================
     // ボタン描画
     // ========================================================
-
     case WM_DRAWITEM:
     {
-        const DRAWITEMSTRUCT* dis =
-            reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
-
-        if (!dis)
-            return TRUE;
+        const DRAWITEMSTRUCT* dis = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
+        if (!dis) return TRUE;
 
         int id = static_cast<int>(dis->CtlID);
 
-        if (id >= ID_CATEGORY_BASE &&
-            id < ID_CATEGORY_BASE + CATEGORY_COUNT)
+        if (id >= ID_CATEGORY_BASE && id < ID_CATEGORY_BASE + CATEGORY_COUNT)
         {
-            DrawCategoryButton(
-                dis,
-                id - ID_CATEGORY_BASE
-            );
+            DrawCategoryButton(dis, id - ID_CATEGORY_BASE);
             return TRUE;
         }
 
@@ -1688,87 +2004,69 @@ LRESULT CALLBACK WndProc(
             return TRUE;
         }
 
+        // ====================================================
+        // 上部ツールバーの BMP 画像ボタン描画処理
+        // ====================================================
+        if (id >= ID_TOOL_NEW && id <= ID_TOOL_JAVA)
+        {
+            HDC hdc = dis->hDC;
+            RECT rc = dis->rcItem;
 
-        if (id == ID_ADD)
-        {
-            DrawCustomButton(
-                dis,
-                RGB(45, 145, 75),
-                L"追加"
-            );
-            return TRUE;
-        }
+            // 対応する HBITMAP を取得
+            HBITMAP hBmp = nullptr;
+            if (id == ID_TOOL_NEW) hBmp = g_hBmpNew;
+            else if (id == ID_TOOL_OPEN) hBmp = g_hBmpOpen;
+            else if (id == ID_TOOL_SAVE) hBmp = g_hBmpSave;
+            else if (id == ID_TOOL_UNDO) hBmp = g_hBmpUndo;
+            else if (id == ID_TOOL_REDO) hBmp = g_hBmpRedo;
+            else if (id == ID_TOOL_RUN)  hBmp = g_hBmpRun;
 
-        if (id == ID_DELETE)
-        {
-            DrawCustomButton(
-                dis,
-                g_deleteMode
-                ? COLOR_DELETE_ON
-                : COLOR_NORMAL,
-                g_deleteMode
-                ? L"削除中"
-                : L"削除モード"
-            );
-            return TRUE;
-        }
+            if (hBmp)
+            {
+                HDC memDC = CreateCompatibleDC(hdc);
+                HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, hBmp);
 
-        if (id == ID_RESET_VIEW)
-        {
-            DrawCustomButton(
-                dis,
-                COLOR_NORMAL,
-                L"表示リセット"
-            );
-            return TRUE;
-        }
+                BITMAP bm{};
+                GetObject(hBmp, sizeof(BITMAP), &bm);
 
-        if (id == ID_SAVE)
-        {
-            DrawCustomButton(
-                dis,
-                COLOR_NORMAL,
-                L"保存"
-            );
-            return TRUE;
-        }
+                // 伸縮の品質を向上（クリアに表示）
+                SetStretchBltMode(hdc, HALFTONE);
 
-        if (id == ID_LOAD)
-        {
-            DrawCustomButton(
-                dis,
-                COLOR_NORMAL,
-                L"読み込み"
-            );
-            return TRUE;
-        }
+                // 「ロボットにする」も含めて、すべてのボタンを領域いっぱいに全面描画する
+                int width = rc.right - rc.left;
+                int height = rc.bottom - rc.top;
 
-        if (id == ID_HELP_BUTTON)
-        {
-            DrawCustomButton(
-                dis,
-                COLOR_NORMAL,
-                L"操作方法"
-            );
-            return TRUE;
-        }
-        if (id == ID_UNDO)
-        {
-            DrawCustomButton(
-                dis,
-                COLOR_NORMAL,
-                L"元に戻す"
-            );
-            return TRUE;
-        }
+                StretchBlt(hdc, rc.left, rc.top, width, height, memDC, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
 
-        if (id == ID_REDO)
-        {
-            DrawCustomButton(
-                dis,
-                COLOR_NORMAL,
-                L"やり直し"
-            );
+                SelectObject(memDC, oldBmp);
+                DeleteDC(memDC);
+            }
+            else
+            {
+                // 画像がない場合の背景描画
+                COLORREF bgColor = RGB(45, 55, 72);
+                if (dis->itemState & ODS_SELECTED)
+                {
+                    bgColor = RGB(GetRValue(bgColor) * 3 / 4, GetGValue(bgColor) * 3 / 4, GetBValue(bgColor) * 3 / 4);
+                }
+                HBRUSH bgBrush = CreateSolidBrush(bgColor);
+                FillRect(hdc, &rc, bgBrush);
+                DeleteObject(bgBrush);
+
+                // フォールバック（文字表示）
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, RGB(255, 255, 255));
+                const wchar_t* fallbackText = L"";
+                if (id == ID_TOOL_NEW) fallbackText = L"新規";
+                else if (id == ID_TOOL_OPEN) fallbackText = L"開く";
+                else if (id == ID_TOOL_SAVE) fallbackText = L"保存";
+                else if (id == ID_TOOL_UNDO) fallbackText = L"戻す";
+                else if (id == ID_TOOL_REDO) fallbackText = L"やり直し";
+                else if (id == ID_TOOL_RUN)  fallbackText = L"ロボットにする";
+
+                DrawTextW(hdc, fallbackText, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+
             return TRUE;
         }
 
@@ -1881,6 +2179,93 @@ LRESULT CALLBACK WndProc(
 
         switch (id)
         {
+
+            // 新規作成
+        case ID_TOOL_NEW:
+            if (notification == BN_CLICKED)
+            {
+                int result = MessageBoxW(
+                    hwnd,
+                    L"現在のブロックをすべて消去して、新規作成しますか？\n"
+                    L"必要な場合は、先に保存してください。",
+                    L"新規作成",
+                    MB_YESNO | MB_ICONWARNING
+                );
+
+                if (result == IDYES)
+                {
+                    // ここでは誤操作によるデータ消失を防ぐため、
+                    // 初期化処理の確認後に実装します。
+                    MessageBoxW(
+                        hwnd,
+                        L"新規作成の初期化処理は、まだ接続されていません。",
+                        L"新規作成",
+                        MB_OK | MB_ICONINFORMATION
+                    );
+                }
+            }
+            return 0;
+
+            // 開く
+        case ID_TOOL_OPEN:
+            if (notification == BN_CLICKED)
+            {
+                LoadProject(hwnd);
+                InvalidateEditor();
+            }
+            return 0;
+
+            // 保存
+        case ID_TOOL_SAVE:
+            if (notification == BN_CLICKED)
+            {
+                SaveProject(hwnd);
+            }
+            return 0;
+
+            // 元に戻す
+        case ID_TOOL_UNDO:
+            if (notification == BN_CLICKED)
+            {
+                if (g_manager.Undo())
+                    InvalidateEditor();
+            }
+            return 0;
+
+            // やり直し
+        case ID_TOOL_REDO:
+            if (notification == BN_CLICKED)
+            {
+                if (g_manager.Redo())
+                    InvalidateEditor();
+            }
+            return 0;
+
+            // 実行
+        case ID_TOOL_RUN:
+            if (notification == BN_CLICKED)
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"Robocode実行処理は、まだ接続されていません。",
+                    L"実行",
+                    MB_OK | MB_ICONINFORMATION
+                );
+            }
+            return 0;
+
+            // Java出力
+        case ID_TOOL_JAVA:
+            if (notification == BN_CLICKED)
+            {
+                MessageBoxW(
+                    hwnd,
+                    L"Java出力処理は、既存のJava生成処理を確認してから接続します。",
+                    L"Java出力",
+                    MB_OK | MB_ICONINFORMATION
+                );
+            }
+            return 0;
          // ====================================================
          // キーボードショートカット
          // ====================================================
@@ -2513,34 +2898,14 @@ LRESULT CALLBACK WndProc(
             memBitmap
         );
 
-        // 背景
-        HBRUSH background =
-            CreateSolidBrush(RGB(35, 35, 42));
-
-        FillRect(memDC, &rc, background);
-        DeleteObject(background);
-
-        // Java出力ボタン
-        RECT javaRect = { 10, 10, 140, 48 };
-
-        HBRUSH javaBrush =
-            CreateSolidBrush(RGB(45, 110, 190));
-
-        FillRect(memDC, &javaRect, javaBrush);
-        DeleteObject(javaBrush);
-
-        SetBkMode(memDC, TRANSPARENT);
-        SetTextColor(memDC, RGB(255, 255, 255));
-
-        DrawTextW(
+        // ① 新しい画面レイアウトを先に描画
+        DrawNewLayout(
             memDC,
-            L"Java出力",
-            -1,
-            &javaRect,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE
+            rc.right,
+            rc.bottom
         );
 
-        // キャンバス
+        // ② キャンバスの範囲
         RECT canvasRect = {
             CANVAS_LEFT,
             CANVAS_TOP,
@@ -2548,22 +2913,13 @@ LRESULT CALLBACK WndProc(
             rc.bottom - 20
         };
 
-        HBRUSH canvasBrush =
-            CreateSolidBrush(RGB(245, 245, 245));
 
-        FillRect(memDC, &canvasRect, canvasBrush);
-        DeleteObject(canvasBrush);
+        DrawCanvasGrid(memDC, canvasRect);
 
-        HBRUSH canvasBorder =
-            CreateSolidBrush(RGB(100, 100, 100));
-
-        FrameRect(memDC, &canvasRect, canvasBorder);
-        DeleteObject(canvasBorder);
-
-        // ブロックと選択枠
+        // ③ 既存のブロックと選択枠を描画
         g_manager.DrawAll(memDC);
 
-        // ドラッグ中のブロック名を表示
+        // ④ ドラッグ中のブロック名を表示
         if (g_draggingFromList)
         {
             std::wstring name = GetBlockName(g_dragBlockType);
@@ -2575,15 +2931,11 @@ LRESULT CALLBACK WndProc(
                 g_listDragPoint.y + 42
             };
 
-            // ブロック一覧と同じ色を取得
-            COLORREF dragColor =
-                GetBlockCategoryColor(g_dragBlockType);
-
-            HBRUSH dragBrush = CreateSolidBrush(dragColor);
-
-            FillRect(memDC, &dragRect, dragBrush);
-
-            DeleteObject(dragBrush);
+            HBRUSH dragBrush = CreateSolidBrush(
+                CATEGORY_COLORS[
+                    static_cast<int>(g_selectedCategory)
+                ]
+            );
 
             FillRect(memDC, &dragRect, dragBrush);
             DeleteObject(dragBrush);
@@ -2600,7 +2952,7 @@ LRESULT CALLBACK WndProc(
             );
         }
 
-        // ズーム表示
+        // ⑤ ズーム表示
         wchar_t zoomText[64]{};
 
         swprintf_s(
@@ -2609,7 +2961,8 @@ LRESULT CALLBACK WndProc(
             g_zoom * 100.0f
         );
 
-        SetTextColor(memDC, RGB(255, 255, 255));
+        SetBkMode(memDC, TRANSPARENT);
+        SetTextColor(memDC, RGB(45, 55, 72));
 
         TextOutW(
             memDC,
@@ -2619,7 +2972,7 @@ LRESULT CALLBACK WndProc(
             static_cast<int>(wcslen(zoomText))
         );
 
-        // バッファを画面へ転送
+        // ⑥ 描画結果を画面へ転送
         BitBlt(
             hdc,
             0,
@@ -2632,6 +2985,7 @@ LRESULT CALLBACK WndProc(
             SRCCOPY
         );
 
+        // ⑦ ダブルバッファを解放
         SelectObject(memDC, oldBitmap);
         DeleteObject(memBitmap);
         DeleteDC(memDC);
@@ -2659,6 +3013,14 @@ LRESULT CALLBACK WndProc(
             );
         }
 
+        // GDI+ Bitmap オブジェクトの解放
+        if (g_hBmpNew) { DeleteObject(g_hBmpNew);   g_hBmpNew = nullptr; }
+        if (g_hBmpOpen) { DeleteObject(g_hBmpOpen);  g_hBmpOpen = nullptr; }
+        if (g_hBmpSave) { DeleteObject(g_hBmpSave);  g_hBmpSave = nullptr; }
+        if (g_hBmpUndo) { DeleteObject(g_hBmpUndo);  g_hBmpUndo = nullptr; }
+        if (g_hBmpRedo) { DeleteObject(g_hBmpRedo);  g_hBmpRedo = nullptr; }
+        if (g_hBmpRun) { DeleteObject(g_hBmpRun);   g_hBmpRun = nullptr; }
+
         PostQuitMessage(0);
         return 0;
     }
@@ -2682,6 +3044,10 @@ int WINAPI WinMain(
 {
     (void)hPrevInstance;
     (void)lpCmdLine;
+
+    // GDI+ の初期化
+    GdiplusStartupInput gdiplusStartupInput;
+    GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, nullptr);
 
     // ウィンドウクラスの登録
     const wchar_t CLASS_NAME[] = L"MyBlockEditor";
@@ -2779,6 +3145,9 @@ int WINAPI WinMain(
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+
+    // GDI+ の終了処理
+    GdiplusShutdown(g_gdiplusToken);
 
     return static_cast<int>(msg.wParam);
 }
