@@ -15,6 +15,7 @@ namespace { constexpr int SNAP_DISTANCE = 24; constexpr int COLUMN_DISTANCE = 35
 void BlockManager::Initialize() {
     blocks.clear();
     parent.clear();
+    repeatBody.clear();
 
     undoStack.clear();
     redoStack.clear();
@@ -30,6 +31,7 @@ void BlockManager::Initialize() {
 
     parent.assign(blocks.size(), -1);
 
+    repeatBody.assign(blocks.size(), -1);
     selected = -1;
     selectedBlocks.clear();
 
@@ -137,12 +139,12 @@ void BlockManager::DrawAll(HDC hdc) const
 
     SetWorldTransform(hdc, &transform);
 
-    // マウスカーソルの座標をワールド座標に変換
     POINT world = ScreenToWorld(mouseX, mouseY);
 
     int hoveredIndex = -1;
 
-    // カーソル下のブロックを判定
+    // カーソルが乗っているブロックを調べる
+    // 後ろから調べることで、手前のブロックを優先する
     for (int i = static_cast<int>(blocks.size()) - 1;
         i >= 0; --i)
     {
@@ -153,25 +155,34 @@ void BlockManager::DrawAll(HDC hdc) const
         }
     }
 
-    // ドラッグ中、またはカーソル下のブロックを明るくする
-    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
+    // 1. Repeatブロックを先に描画する
+    for (int i = 0; i < (int)blocks.size(); ++i)
     {
-        bool glowing = (i == hoveredIndex);
-
-        // ドラッグ中のブロックも明るくする
-        if (dragging)
+        if (blocks[i].type == BlockType::Repeat)
         {
-            if (std::find(
-                dragBlocks.begin(),
-                dragBlocks.end(),
-                i) != dragBlocks.end())
+            DrawBlock(hdc, blocks[i], false);
+        }
+    }
+
+    // 2. 普通のブロックを後から描画する
+    // 後から描画したブロックが手前に表示される
+    for (int i = 0; i < (int)blocks.size(); ++i)
+    {
+        if (blocks[i].type != BlockType::Repeat)
+        {
+            bool glowing = (i == hoveredIndex);
+
+            if (dragging &&
+                std::find(dragBlocks.begin(), dragBlocks.end(), i)
+                != dragBlocks.end())
             {
                 glowing = true;
             }
-        }
 
-        DrawBlock(hdc, blocks[i], glowing);
+            DrawBlock(hdc, blocks[i], glowing);
+        }
     }
+
 
     // 範囲選択中の四角形
     if (selectingRange)
@@ -281,12 +292,42 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
     {
         int current = selected;
 
+        std::vector<bool> added(blocks.size(), false);
+
         for (int count = 0;
             current >= 0 &&
+            current < static_cast<int>(blocks.size()) &&
             count < static_cast<int>(blocks.size());
             ++count)
         {
+            if (added[current])
+                break;
+
+            added[current] = true;
             dragBlocks.push_back(current);
+
+            // Repeat の内側ブロックも移動対象にする
+            if (blocks[current].type == BlockType::Repeat &&
+                current < static_cast<int>(repeatBody.size()))
+            {
+                int body = repeatBody[current];
+
+                for (int bodyCount = 0;
+                    body >= 0 &&
+                    body < static_cast<int>(blocks.size()) &&
+                    bodyCount < static_cast<int>(blocks.size());
+                    ++bodyCount)
+                {
+                    if (added[body])
+                        break;
+
+                    added[body] = true;
+                    dragBlocks.push_back(body);
+
+                    body = GetChild(body);
+                }
+            }
+
             current = GetChild(current);
         }
     }
@@ -415,27 +456,37 @@ bool BlockManager::IsDescendant(int blockIndex, int ancestorIndex) const {
 
 }
 
-bool BlockManager::HasChild(int blockIndex) const {
-    for (int p : parent) { if (p == blockIndex) return true; }
+bool BlockManager::HasChild(int blockIndex) const 
+{
+   
+    // 外側の接続だけを調べる。
+        // Repeat の内側は repeatBody で別管理する。
+        for (int p : parent)
+        {
+            if (p == blockIndex)
+                return true;
+        }
 
     return false;
 
-
 }
 
-int BlockManager::GetChild(int blockIndex) const {
-    for (int i = 0; i < static_cast<int>(parent.size()); ++i) { if (parent[i] == blockIndex) return i; }
+int BlockManager::GetChild(int blockIndex) const 
+{
+    // 外側・通常の接続を取得する
+    for (int i = 0; i < static_cast<int>(parent.size()); ++i)
+    {
+        if (parent[i] == blockIndex)
+            return i;
+    }
 
     return -1;
-
 
 }
 
 // ============================================================ 
 // ブロックの接続 
 // ============================================================
-
-
 void BlockManager::SnapSelectedBlock()
 {
     const int count = static_cast<int>(blocks.size());
@@ -443,7 +494,7 @@ void BlockManager::SnapSelectedBlock()
     if (selected < 0 || selected >= count)
         return;
 
-    // 選択ブロックと、その下の子孫だけを収集する
+    // 選択ブロックと、その下の子孫を収集する
     std::vector<int> movingBlocks;
     int current = selected;
 
@@ -466,12 +517,70 @@ void BlockManager::SnapSelectedBlock()
     for (int index : movingBlocks)
         isMoving[index] = true;
 
+    // ========================================
+   // ① Repeat の内側に接続する
+   // ========================================
+    if (movingBlocks.size() == 1)
+    {
+        const int movingIndex = movingBlocks.front();
+
+        if (blocks[movingIndex].type != BlockType::Repeat)
+        {
+            for (int i = 0; i < count; ++i)
+            {
+                if (i == movingIndex || isMoving[i])
+                    continue;
+
+                if (blocks[i].type != BlockType::Repeat)
+                    continue;
+
+                // Repeat の内側の接続位置
+                const int expectedX = blocks[i].x + 48;
+                const int expectedY = blocks[i].y + 35;
+
+                const int dx =
+                    std::abs(blocks[movingIndex].x - expectedX);
+
+                const int dy =
+                    std::abs(blocks[movingIndex].y - expectedY);
+
+                if (dx > SNAP_DISTANCE || dy > SNAP_DISTANCE)
+                    continue;
+
+                // 内側の接続先が既にある場合は使わない
+                if (i >= static_cast<int>(repeatBody.size()))
+                    continue;
+
+                if (repeatBody[i] != -1)
+                    continue;
+
+                if (IsDescendant(i, movingIndex))
+                    continue;
+
+                // Repeat の内側に配置
+                blocks[movingIndex].x = expectedX - 24;
+                blocks[movingIndex].y = expectedY + 2;
+
+                // 内側の接続は repeatBody だけに保存する
+                repeatBody[i] = movingIndex;
+
+                // 外側の接続関係とは分離する
+                parent[movingIndex] = -1;
+
+                return;
+            }
+        }
+    }
+    
+
+    // ========================================
+    // ② 通常の上下接続を探す
+    // ========================================
     int bestTarget = -1;
     int bestDistance = SNAP_DISTANCE + 1;
     int bestY = 0;
     int bestSide = -1;
 
-    // 接続先のブロックを探す
     for (int i = 0; i < count; ++i)
     {
         if (isMoving[i])
@@ -480,17 +589,16 @@ void BlockManager::SnapSelectedBlock()
         const Block& target = blocks[i];
 
         // ----------------------------------------
-        // ① 移動グループを C の下側に接続
-        // グループ先頭を C の子にする
+        // ②-1 移動グループを相手の下側に接続
         // ----------------------------------------
         if (!HasChild(i) &&
             std::abs(blocks[firstBlock].x - target.x)
             < COLUMN_DISTANCE)
         {
-            int expectedY =
+            const int expectedY =
                 target.y + target.h - TAB_HEIGHT;
 
-            int distance =
+            const int distance =
                 std::abs(blocks[firstBlock].y - expectedY);
 
             if (distance <= SNAP_DISTANCE &&
@@ -504,16 +612,15 @@ void BlockManager::SnapSelectedBlock()
         }
 
         // ----------------------------------------
-        // ② 移動グループを C の上側に接続
-        // C をグループ末端の子にする
+        // ②-2 相手を移動グループの下側に接続
         // ----------------------------------------
         if (std::abs(blocks[lastBlock].x - target.x)
             < COLUMN_DISTANCE)
         {
-            int expectedY =
+            const int expectedY =
                 target.y - blocks[lastBlock].h + TAB_HEIGHT;
 
-            int distance =
+            const int distance =
                 std::abs(blocks[lastBlock].y - expectedY);
 
             if (distance <= SNAP_DISTANCE &&
@@ -530,7 +637,9 @@ void BlockManager::SnapSelectedBlock()
     if (bestTarget < 0)
         return;
 
-    // 接続位置に合わせてグループ全体を移動
+    // ========================================
+    // ③ 接続位置にグループ全体を移動
+    // ========================================
     const int attachBlock =
         (bestSide == 0) ? firstBlock : lastBlock;
 
@@ -546,31 +655,27 @@ void BlockManager::SnapSelectedBlock()
         blocks[index].y += dy;
     }
 
+    // ========================================
+    // ④ 接続関係を更新
+    // ========================================
     if (bestSide == 0)
     {
-        // C → A → B
+        // 相手 → 移動グループ
         parent[firstBlock] = bestTarget;
     }
     else
     {
-        // A → B → C
-        // C がもともと別のブロックの子なら、
-        // その接続先をグループ先頭につなぎ替える
-        int oldParent = parent[bestTarget];
+        // 移動グループ → 相手
+        const int oldParent = parent[bestTarget];
 
         parent[bestTarget] = lastBlock;
 
         if (oldParent >= 0 && !isMoving[oldParent])
-        {
             parent[firstBlock] = oldParent;
-        }
         else
-        {
             parent[firstBlock] = -1;
-        }
     }
 }
-
 
 // ============================================================ 
 // 実行順序
@@ -634,9 +739,21 @@ int BlockManager::GetSelectedBlock() const { return selected; }
 void BlockManager::AddBlock(BlockType type, int x, int y) {
     SaveUndoState();
 
-    blocks.push_back({ type, x, y });
-    parent.push_back(-1);
+    
+    Block block{};
+    block.type = type;
+    block.x = x;
+    block.y = y;
 
+    // Repeatだけ高さを確保する
+    if (type == BlockType::Repeat)
+    {
+        block.h = 120;
+    }
+
+    blocks.push_back(block);
+    parent.push_back(-1);
+    repeatBody.push_back(-1);
 
 }
 
