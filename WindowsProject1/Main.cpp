@@ -565,11 +565,30 @@ void SelectCategory(BlockCategory category)
     // 選択したカテゴリのブロックを一覧に表示
     InitializeBlockList(g_blockList);
 
-    // 一覧を表示する
-    g_showBlockList = true;
+    // 押されたカテゴリボタンのウィンドウ位置（Y座標）を取得してリストを配置する
+    int index = static_cast<int>(category);
+    if (g_categoryButtons[index] && g_blockList)
+    {
+        RECT btnRc{};
+        GetWindowRect(g_categoryButtons[index], &btnRc);
 
-    if (g_blockList)
-        ShowWindow(g_blockList, SW_SHOW);
+        // スクリーン座標をメインウィンドウ（クライアント座標）に変換
+        POINT ptTopLeft = { btnRc.right + 5, btnRc.top }; // ボタンの右隣に表示
+        ScreenToClient(g_mainWindow, &ptTopLeft);
+
+        // リストボックスの位置とサイズを移動して表示（幅180、高さ220など）
+        SetWindowPos(
+            g_blockList,
+            HWND_TOP,
+            ptTopLeft.x,
+            ptTopLeft.y,
+            180,
+            220,
+            SWP_SHOWWINDOW
+        );
+    }
+
+    g_showBlockList = true;
 
     // 削除モードを解除
     if (g_deleteMode)
@@ -1937,17 +1956,18 @@ LRESULT CALLBACK WndProc(
         g_blockList = CreateWindowW(
             L"LISTBOX",
             nullptr,
-            WS_CHILD | WS_VISIBLE |
+            WS_CHILD | // SW_VISIBLE を外す
             WS_BORDER | WS_VSCROLL |
             LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
             LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
             150, 60, 180, 190,
             hwnd,
-            reinterpret_cast<HMENU>(
-                static_cast<INT_PTR>(ID_BLOCK_LIST)),
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_BLOCK_LIST)),
             GetModuleHandleW(nullptr),
             nullptr
         );
+        // 起動時は隠しておく
+        ShowWindow(g_blockList, SW_HIDE);
 
         InitializeBlockList(g_blockList);
 
@@ -2605,6 +2625,16 @@ LRESULT CALLBACK WndProc(
             GET_X_LPARAM(lParam),
             GET_Y_LPARAM(lParam)
         };
+
+        //キャンバスやツールバー以外（左側の余白など）をクリックしたらリストボックスを閉じる
+        if (g_blockList && IsWindowVisible(g_blockList))
+        {
+            if (!IsCanvasPoint(p) && p.y > 50)
+            {
+                ShowWindow(g_blockList, SW_HIDE);
+                g_showBlockList = false;
+            }
+        }
 
         // Java出力ボタン
         if (p.x >= 10 && p.x <= 140 &&
