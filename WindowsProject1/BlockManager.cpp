@@ -118,9 +118,11 @@ POINT BlockManager::WorldToScreen(int x, int y) const {
 // 描画
 // ============================================================
 
-
 void BlockManager::DrawAll(HDC hdc) const
 {
+    if (!hdc)
+        return;
+
     int savedDC = SaveDC(hdc);
 
     if (savedDC == 0)
@@ -143,11 +145,15 @@ void BlockManager::DrawAll(HDC hdc) const
 
     int hoveredIndex = -1;
 
-    // カーソルが乗っているブロックを調べる
-    // 後ろから調べることで、手前のブロックを優先する
+    // ========================================
+    // ① 通常のノードを優先してホバー判定
+    // ========================================
     for (int i = static_cast<int>(blocks.size()) - 1;
         i >= 0; --i)
     {
+        if (blocks[i].type == BlockType::Repeat)
+            continue;
+
         if (HitBlock(blocks[i], world.x, world.y))
         {
             hoveredIndex = i;
@@ -155,44 +161,85 @@ void BlockManager::DrawAll(HDC hdc) const
         }
     }
 
-    // 1. Repeatブロックを先に描画する
-    for (int i = 0; i < (int)blocks.size(); ++i)
+    // ========================================
+    // ② 通常のノードに当たらなければ
+    //    Repeat ブロックを判定
+    // ========================================
+    if (hoveredIndex == -1)
     {
-        if (blocks[i].type == BlockType::Repeat)
+        for (int i = static_cast<int>(blocks.size()) - 1;
+            i >= 0; --i)
         {
-            DrawBlock(hdc, blocks[i], false);
+            if (blocks[i].type != BlockType::Repeat)
+                continue;
+
+            if (HitBlock(blocks[i], world.x, world.y))
+            {
+                hoveredIndex = i;
+                break;
+            }
         }
     }
 
-    // 2. 普通のブロックを後から描画する
-    // 後から描画したブロックが手前に表示される
-    for (int i = 0; i < (int)blocks.size(); ++i)
+    // ========================================
+    // ③ Repeat ブロックを先に描画
+    //    ホバー中なら光らせる
+    // ========================================
+    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
     {
         if (blocks[i].type != BlockType::Repeat)
+            continue;
+
+        bool glowing = (i == hoveredIndex);
+
+        if (dragging &&
+            std::find(
+                dragBlocks.begin(),
+                dragBlocks.end(),
+                i) != dragBlocks.end())
         {
-            bool glowing = (i == hoveredIndex);
-
-            if (dragging &&
-                std::find(dragBlocks.begin(), dragBlocks.end(), i)
-                != dragBlocks.end())
-            {
-                glowing = true;
-            }
-
-            DrawBlock(hdc, blocks[i], glowing);
+            glowing = true;
         }
+
+        DrawBlock(hdc, blocks[i], glowing);
     }
 
+    // ========================================
+    // ④ 通常のノードを後から描画
+    // ========================================
+    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
+    {
+        if (blocks[i].type == BlockType::Repeat)
+            continue;
 
-    // 範囲選択中の四角形
+        bool glowing = (i == hoveredIndex);
+
+        if (dragging &&
+            std::find(
+                dragBlocks.begin(),
+                dragBlocks.end(),
+                i) != dragBlocks.end())
+        {
+            glowing = true;
+        }
+
+        DrawBlock(hdc, blocks[i], glowing);
+    }
+
+    // ========================================
+    // ⑤ 範囲選択中の四角形
+    // ========================================
     if (selectingRange)
     {
         int left = (std::min)(
             selectionStart.x, selectionEnd.x);
+
         int top = (std::min)(
             selectionStart.y, selectionEnd.y);
+
         int right = (std::max)(
             selectionStart.x, selectionEnd.x);
+
         int bottom = (std::max)(
             selectionStart.y, selectionEnd.y);
 
@@ -201,18 +248,27 @@ void BlockManager::DrawAll(HDC hdc) const
 
         if (rangePen)
         {
-            HGDIOBJ previousPen = SelectObject(hdc, rangePen);
-            HGDIOBJ previousBrush = SelectObject(
-                hdc, GetStockObject(HOLLOW_BRUSH));
+            HGDIOBJ previousPen =
+                SelectObject(hdc, rangePen);
 
-            Rectangle(hdc, left, top, right, bottom);
+            HGDIOBJ previousBrush =
+                SelectObject(
+                    hdc,
+                    GetStockObject(HOLLOW_BRUSH));
+
+            Rectangle(
+                hdc,
+                left,
+                top,
+                right,
+                bottom);
 
             SelectObject(hdc, previousBrush);
             SelectObject(hdc, previousPen);
+
             DeleteObject(rangePen);
         }
     }
-
 
     RestoreDC(hdc, savedDC);
 }
@@ -379,17 +435,46 @@ void BlockManager::OnMouseMove(int x, int y)
     if (dx == 0 && dy == 0)
         return;
 
+   
     if (!dragStarted)
-    {
-        SaveUndoState();
+{
+    SaveUndoState();
 
-        if (selectedBlocks.empty())
+    if (selectedBlocks.empty())
+    {
+        // ========================================
+        // Repeat の内側からドラッグして外す場合、
+        // repeatBody の接続情報も解除する
+        // ========================================
+        for (int i = 0;
+            i < static_cast<int>(blocks.size());
+            ++i)
+        {
+            if (blocks[i].type != BlockType::Repeat)
+                continue;
+
+            if (i >= static_cast<int>(repeatBody.size()))
+                continue;
+
+            // 選択したブロックが内側の先頭なら、
+            // Repeat と選択ブロックの接続を解除
+            if (repeatBody[i] == selected)
+            {
+                repeatBody[i] = -1;
+            }
+        }
+
+        // 選択したブロックの親との接続を解除
+        if (selected >= 0 &&
+            selected < static_cast<int>(parent.size()))
         {
             parent[selected] = -1;
         }
-
-        dragStarted = true;
     }
+
+    dragStarted = true;
+}
+
 
     for (int index : dragBlocks)
     {
@@ -401,8 +486,109 @@ void BlockManager::OnMouseMove(int x, int y)
         }
     }
 
+    // ========================================
+    // ドラッグ中の Repeat の高さを調整
+    // ========================================
+    const int count = static_cast<int>(blocks.size());
+
+    // まず、内側のブロックに必要な高さに戻す
+    for (int i = 0; i < count; ++i)
+    {
+        if (blocks[i].type != BlockType::Repeat)
+            continue;
+
+        int body = repeatBody[i];
+        int lastBody = body;
+
+        for (int step = 0;
+            lastBody >= 0 &&
+            lastBody < count &&
+            step < count;
+            ++step)
+        {
+            int child = GetChild(lastBody);
+
+            if (child < 0)
+                break;
+
+            lastBody = child;
+        }
+
+        if (body < 0)
+        {
+            blocks[i].h = 120;
+        }
+        else
+        {
+            blocks[i].h = (std::max)(
+                120,
+                blocks[lastBody].y
+                + blocks[lastBody].h
+                - blocks[i].y + 30);
+        }
+    }
+
+    // 1個の通常ブロックをドラッグしているとき、
+    // Repeat の一番下に近づいたら、先にスペースを広げる
+    if (dragBlocks.size() == 1 &&
+        selected >= 0 &&
+        selected < count &&
+        blocks[selected].type != BlockType::Repeat)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            if (blocks[i].type != BlockType::Repeat)
+                continue;
+
+            int body = repeatBody[i];
+            int lastBody = body;
+
+            for (int step = 0;
+                lastBody >= 0 &&
+                lastBody < count &&
+                step < count;
+                ++step)
+            {
+                int child = GetChild(lastBody);
+
+                if (child < 0)
+                    break;
+
+                lastBody = child;
+            }
+
+            const int targetX = blocks[i].x + 24;
+
+            const int targetY =
+                (body < 0)
+                ? blocks[i].y + 37
+                : blocks[lastBody].y
+                + blocks[lastBody].h - TAB_HEIGHT;
+
+            const int distanceX =
+                std::abs(blocks[selected].x - targetX);
+
+            const int distanceY =
+                std::abs(blocks[selected].y - targetY);
+
+            if (distanceX <= SNAP_DISTANCE &&
+                distanceY <= SNAP_DISTANCE)
+            {
+                const int requiredHeight =
+                    targetY + blocks[selected].h
+                    - blocks[i].y + 30;
+
+                blocks[i].h = (std::max)(
+                    blocks[i].h,
+                    requiredHeight);
+            }
+        }
+    }
+
     lastX = world.x;
     lastY = world.y;
+
+
 }
 
 void BlockManager::OnMouseUp(HWND hwnd)
@@ -487,6 +673,7 @@ int BlockManager::GetChild(int blockIndex) const
 // ============================================================ 
 // ブロックの接続 
 // ============================================================
+
 void BlockManager::SnapSelectedBlock()
 {
     const int count = static_cast<int>(blocks.size());
@@ -494,15 +681,24 @@ void BlockManager::SnapSelectedBlock()
     if (selected < 0 || selected >= count)
         return;
 
-    // 選択ブロックと、その下の子孫を収集する
+    // ========================================
+    // ① 移動するブロックのかたまりを収集
+    // ========================================
     std::vector<int> movingBlocks;
+    std::vector<bool> isMoving(count, false);
+
     int current = selected;
 
     for (int step = 0;
         current >= 0 && current < count && step < count;
         ++step)
     {
+        if (isMoving[current])
+            break;
+
         movingBlocks.push_back(current);
+        isMoving[current] = true;
+
         current = GetChild(current);
     }
 
@@ -512,75 +708,95 @@ void BlockManager::SnapSelectedBlock()
     const int firstBlock = movingBlocks.front();
     const int lastBlock = movingBlocks.back();
 
-    std::vector<bool> isMoving(count, false);
-
-    for (int index : movingBlocks)
-        isMoving[index] = true;
-
     // ========================================
-   // ① Repeat の内側に接続する
-   // ========================================
-    if (movingBlocks.size() == 1)
+    // ② Repeat の内側への接続
+    // ========================================
+    if (blocks[firstBlock].type != BlockType::Repeat)
     {
-        const int movingIndex = movingBlocks.front();
-
-        if (blocks[movingIndex].type != BlockType::Repeat)
+        for (int i = 0; i < count; ++i)
         {
-            for (int i = 0; i < count; ++i)
+            if (isMoving[i])
+                continue;
+
+            if (blocks[i].type != BlockType::Repeat)
+                continue;
+
+            if (i >= static_cast<int>(repeatBody.size()))
+                continue;
+
+            int firstBody = repeatBody[i];
+            int lastBody = firstBody;
+
+            for (int step = 0;
+                lastBody >= 0 &&
+                lastBody < count &&
+                step < count;
+                ++step)
             {
-                if (i == movingIndex || isMoving[i])
-                    continue;
+                int child = GetChild(lastBody);
 
-                if (blocks[i].type != BlockType::Repeat)
-                    continue;
+                if (child < 0 || isMoving[child])
+                    break;
 
-                // Repeat の内側の接続位置
-                const int expectedX = blocks[i].x + 48;
-                const int expectedY = blocks[i].y + 35;
-
-                const int dx =
-                    std::abs(blocks[movingIndex].x - expectedX);
-
-                const int dy =
-                    std::abs(blocks[movingIndex].y - expectedY);
-
-                if (dx > SNAP_DISTANCE || dy > SNAP_DISTANCE)
-                    continue;
-
-                // 内側の接続先が既にある場合は使わない
-                if (i >= static_cast<int>(repeatBody.size()))
-                    continue;
-
-                if (repeatBody[i] != -1)
-                    continue;
-
-                if (IsDescendant(i, movingIndex))
-                    continue;
-
-                // Repeat の内側に配置
-                blocks[movingIndex].x = expectedX - 24;
-                blocks[movingIndex].y = expectedY + 2;
-
-                // 内側の接続は repeatBody だけに保存する
-                repeatBody[i] = movingIndex;
-
-                // 外側の接続関係とは分離する
-                parent[movingIndex] = -1;
-
-                return;
+                lastBody = child;
             }
+
+            const int targetX = blocks[i].x + 24;
+
+            const int targetY =
+                (firstBody < 0)
+                ? blocks[i].y + 46
+                : blocks[lastBody].y
+                + blocks[lastBody].h - TAB_HEIGHT;
+
+            const int dx =
+                std::abs(blocks[firstBlock].x - targetX);
+
+            const int dy =
+                std::abs(blocks[firstBlock].y - targetY);
+
+            if (dx > SNAP_DISTANCE || dy > SNAP_DISTANCE)
+                continue;
+
+            const int moveX = targetX - blocks[firstBlock].x;
+            const int moveY = targetY - blocks[firstBlock].y;
+
+            for (int index : movingBlocks)
+            {
+                blocks[index].x += moveX;
+                blocks[index].y += moveY;
+            }
+
+            if (firstBody < 0)
+            {
+                repeatBody[i] = firstBlock;
+                parent[firstBlock] = -1;
+            }
+            else
+            {
+                parent[firstBlock] = lastBody;
+            }
+
+            const int bodyBottom =
+                blocks[lastBlock].y + blocks[lastBlock].h;
+
+            blocks[i].h = (std::max)(
+                120,
+                bodyBottom - blocks[i].y + 30);
+
+            return;
         }
     }
-    
 
     // ========================================
-    // ② 通常の上下接続を探す
+    // ③ 通常ブロックへの接続候補を探す
     // ========================================
     int bestTarget = -1;
     int bestDistance = SNAP_DISTANCE + 1;
-    int bestY = 0;
     int bestSide = -1;
 
+    // 0 = 移動グループを接続先の下に挿入
+    // 1 = 接続先を移動グループの下につなぐ
     for (int i = 0; i < count; ++i)
     {
         if (isMoving[i])
@@ -589,30 +805,35 @@ void BlockManager::SnapSelectedBlock()
         const Block& target = blocks[i];
 
         // ----------------------------------------
-        // ②-1 移動グループを相手の下側に接続
+        // ③-A 接続先の下に移動グループを接続
+        // 子ブロックがある場合も候補にする
         // ----------------------------------------
-        if (!HasChild(i) &&
-            std::abs(blocks[firstBlock].x - target.x)
+        if (std::abs(blocks[firstBlock].x - target.x)
             < COLUMN_DISTANCE)
         {
-            const int expectedY =
-                target.y + target.h - TAB_HEIGHT;
+            int oldChild = GetChild(i);
 
-            const int distance =
-                std::abs(blocks[firstBlock].y - expectedY);
-
-            if (distance <= SNAP_DISTANCE &&
-                distance < bestDistance)
+            // 移動グループ自身を接続先にしない
+            if (oldChild < 0 || !isMoving[oldChild])
             {
-                bestTarget = i;
-                bestDistance = distance;
-                bestY = expectedY;
-                bestSide = 0;
+                const int expectedY =
+                    target.y + target.h - TAB_HEIGHT;
+
+                const int distance =
+                    std::abs(blocks[firstBlock].y - expectedY);
+
+                if (distance <= SNAP_DISTANCE &&
+                    distance < bestDistance)
+                {
+                    bestTarget = i;
+                    bestDistance = distance;
+                    bestSide = 0;
+                }
             }
         }
 
         // ----------------------------------------
-        // ②-2 相手を移動グループの下側に接続
+        // ③-B 移動グループの下に接続先をつなぐ
         // ----------------------------------------
         if (std::abs(blocks[lastBlock].x - target.x)
             < COLUMN_DISTANCE)
@@ -628,7 +849,6 @@ void BlockManager::SnapSelectedBlock()
             {
                 bestTarget = i;
                 bestDistance = distance;
-                bestY = expectedY;
                 bestSide = 1;
             }
         }
@@ -638,42 +858,102 @@ void BlockManager::SnapSelectedBlock()
         return;
 
     // ========================================
-    // ③ 接続位置にグループ全体を移動
-    // ========================================
-    const int attachBlock =
-        (bestSide == 0) ? firstBlock : lastBlock;
-
-    const int dx =
-        blocks[bestTarget].x - blocks[attachBlock].x;
-
-    const int dy =
-        bestY - blocks[attachBlock].y;
-
-    for (int index : movingBlocks)
-    {
-        blocks[index].x += dx;
-        blocks[index].y += dy;
-    }
-
-    // ========================================
-    // ④ 接続関係を更新
+    // ④ 接続先の下にグループを挿入
     // ========================================
     if (bestSide == 0)
     {
-        // 相手 → 移動グループ
-        parent[firstBlock] = bestTarget;
+        const int target = bestTarget;
+
+        // 接続先に元からつながっているブロック
+        const int oldChild = GetChild(target);
+
+        // 移動グループを接続位置に移動
+        const int targetX = blocks[target].x;
+        const int targetY =
+            blocks[target].y + blocks[target].h - TAB_HEIGHT;
+
+        const int moveX = targetX - blocks[firstBlock].x;
+        const int moveY = targetY - blocks[firstBlock].y;
+
+        for (int index : movingBlocks)
+        {
+            blocks[index].x += moveX;
+            blocks[index].y += moveY;
+        }
+
+        // 既存の子ブロックがあれば、
+        // 移動グループの下につなげられる位置までずらす
+        if (oldChild >= 0 && !isMoving[oldChild])
+        {
+            const int newChildY =
+                blocks[lastBlock].y
+                + blocks[lastBlock].h - TAB_HEIGHT;
+
+            const int shiftY =
+                newChildY - blocks[oldChild].y;
+
+            int child = oldChild;
+
+            for (int step = 0;
+                child >= 0 &&
+                child < count &&
+                step < count;
+                ++step)
+            {
+                if (isMoving[child])
+                    break;
+
+                blocks[child].x += moveX;
+                blocks[child].y += shiftY;
+
+                child = GetChild(child);
+            }
+
+            // 元の子を移動グループの末尾につなぐ
+            parent[oldChild] = lastBlock;
+        }
+
+        // 接続先 → 移動グループ
+        parent[firstBlock] = target;
+
+        return;
+    }
+
+    // ========================================
+    // ⑤ 移動グループの下に接続先をつなぐ
+    // ========================================
+    const int target = bestTarget;
+
+    const int targetOldParent = parent[target];
+
+    const int moveX =
+        blocks[target].x - blocks[lastBlock].x;
+
+    const int moveY =
+        blocks[target].y
+        - blocks[lastBlock].h + TAB_HEIGHT
+        - blocks[lastBlock].y;
+
+    for (int index : movingBlocks)
+    {
+        blocks[index].x += moveX;
+        blocks[index].y += moveY;
+    }
+
+    // 移動グループ → 接続先
+    parent[target] = lastBlock;
+
+    // 接続先の元の親があれば、その親の下に
+    // 移動グループを挿入する
+    if (targetOldParent >= 0 &&
+        targetOldParent < count &&
+        !isMoving[targetOldParent])
+    {
+        parent[firstBlock] = targetOldParent;
     }
     else
     {
-        // 移動グループ → 相手
-        const int oldParent = parent[bestTarget];
-
-        parent[bestTarget] = lastBlock;
-
-        if (oldParent >= 0 && !isMoving[oldParent])
-            parent[firstBlock] = oldParent;
-        else
-            parent[firstBlock] = -1;
+        parent[firstBlock] = -1;
     }
 }
 

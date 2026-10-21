@@ -653,7 +653,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         const int tabW = 40;
         const int tabX = 24;
         const int wallW = 24;
-        const int headerH = 38;
+        const int headerH = 46;
         const int bottomH = 30;
 
         POINT points[] =
