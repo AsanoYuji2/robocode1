@@ -233,6 +233,210 @@ bool ExportJavaCustom(const std::vector<Block>& blocks, const std::wstring& targ
                 std::to_string(GetBValue(b.scanColor)) +
                 "));\n";
             break;
+        case BlockType::Stop:
+            code += "            stop();\n";
+            break;
+
+        case BlockType::Resume:
+            code += "            resume();\n";
+            break;
+
+        case BlockType::TurnGunRight:
+            code +=
+                "            setTurnGunRight(" +
+                std::to_string(b.degrees) + ");\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::TurnGunLeft:
+            code +=
+                "            setTurnGunLeft(" +
+                std::to_string(b.degrees) + ");\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::TurnRadarRight:
+            code +=
+                "            setTurnRadarRight(" +
+                std::to_string(b.degrees) + ");\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::TurnRadarLeft:
+            code +=
+                "            setTurnRadarLeft(" +
+                std::to_string(b.degrees) + ");\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::SetAdjustGunForRobotTurn:
+            code += "            setAdjustGunForRobotTurn(true);\n";
+            break;
+
+        case BlockType::SetAdjustRadarForRobotTurn:
+            code += "            setAdjustRadarForRobotTurn(true);\n";
+            break;
+
+        case BlockType::SetAdjustRadarForGunTurn:
+            code += "            setAdjustRadarForGunTurn(true);\n";
+            break;
+
+        case BlockType::DoNothing:
+            code += "            execute();\n";
+            break;
+
+        case BlockType::Wait:
+            code +=
+                "            waitFor(" +
+                std::to_string(static_cast<int>(b.waitSeconds)) +
+                ");\n";
+            break;
+        case BlockType::TurnGunToEnemy:
+            code +=
+                "            setTurnGunRight(\n"
+                "                robocode.util.Utils.normalRelativeAngleDegrees(\n"
+                "                    getHeading() + getBearing() - getGunHeading()));\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::TurnBodyToEnemy:
+            code +=
+                "            setTurnRight(\n"
+                "                robocode.util.Utils.normalRelativeAngleDegrees(\n"
+                "                    getHeading() + getBearing() - getHeading()));\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::GetAwayFromWall:
+            code +=
+                "            double margin = 100;\n"
+                "            if (getX() < margin || getX() > getBattleFieldWidth() - margin ||\n"
+                "                getY() < margin || getY() > getBattleFieldHeight() - margin)\n"
+                "            {\n"
+                "                setBack(150);\n"
+                "                setTurnRight(90);\n"
+                "                execute();\n"
+                "            }\n";
+            break;
+
+        case BlockType::HesitateNextBullet:
+            code +=
+                "            if (getGunHeat() > 0)\n"
+                "                execute();\n";
+            break;
+
+        case BlockType::KeepAwayRadarFire:
+            code +=
+                "            setTurnRadarRight(360);\n"
+                "            setBack(100);\n"
+                "            setFire(1.5);\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::BodyBlowFire:
+            code +=
+                "            setAhead(50);\n"
+                "            setFire(3);\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::SmartFire:
+            code +=
+                "            if (getEnergy() > 50)\n"
+                "                setFire(3);\n"
+                "            else if (getEnergy() > 20)\n"
+                "                setFire(1.5);\n"
+                "            else\n"
+                "                setFire(0.5);\n"
+                "            execute();\n";
+            break;
+        case BlockType::VictoryDance:
+            code +=
+                "            setBodyColor(Color.YELLOW);\n"
+                "            setGunColor(Color.RED);\n"
+                "            setRadarColor(Color.GREEN);\n"
+                "            setTurnRight(360);\n"
+                "            execute();\n";
+            break;
+
+        case BlockType::VictorySpin:
+            code +=
+                "            setTurnRight(360);\n"
+                "            setTurnGunRight(360);\n"
+                "            setTurnRadarRight(360);\n"
+                "            execute();\n";
+            break;
+        case BlockType::GetName:
+            code += "            getName();\n";
+            break;
+
+        case BlockType::GetX:
+            code += "            getX();\n";
+            break;
+
+        case BlockType::GetY:
+            code += "            getY();\n";
+            break;
+
+        case BlockType::GetEnergy:
+            code += "            getEnergy();\n";
+            break;
+
+        case BlockType::GetHeading:
+            code += "            getHeading();\n";
+            break;
+
+        case BlockType::GetGunHeading:
+            code += "            getGunHeading();\n";
+            break;
+
+        case BlockType::GetRadarHeading:
+            code += "            getRadarHeading();\n";
+            break;
+
+        case BlockType::GetGunCoolingRate:
+            code += "            getGunCoolingRate();\n";
+            break;
+
+        case BlockType::GetGunHeat:
+            code += "            getGunHeat();\n";
+            break;
+
+        case BlockType::GetVelocity:
+            code += "            getVelocity();\n";
+            break;
+
+        case BlockType::GetOthers:
+            code += "            getOthers();\n";
+            break;
+
+        case BlockType::GetBattleFieldHeight:
+            code += "            getBattleFieldHeight();\n";
+            break;
+
+        case BlockType::GetBattleFieldWidth:
+            code += "            getBattleFieldWidth();\n";
+            break;
+
+        case BlockType::GetHeight:
+            code += "            getHeight();\n";
+            break;
+
+        case BlockType::GetWidth:
+            code += "            getWidth();\n";
+            break;
+
+        case BlockType::GetNumRounds:
+            code += "            getNumRounds();\n";
+            break;
+
+        case BlockType::GetRoundNum:
+            code += "            getRoundNum();\n";
+            break;
+
+        case BlockType::GetTime:
+            code += "            getTime();\n";
+            break;
         }
     }
 

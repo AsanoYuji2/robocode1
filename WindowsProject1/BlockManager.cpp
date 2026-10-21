@@ -1383,6 +1383,11 @@ const std::vector<int>& BlockManager::GetSelectedBlocks() const { return selecte
 
 bool BlockManager::IsSelectingRange() const { return selectingRange; }
 
+const std::vector<int>& BlockManager::GetRepeatBodies() const
+{
+    return repeatBody;
+}
+
 // ============================================================ 
 // コピー
 // ============================================================
