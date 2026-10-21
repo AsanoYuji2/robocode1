@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include<string>
 #include "Block.h"
 
-bool ExportJava(const std::vector<Block>& blocks);
+bool ExportJavaCustom(const std::vector<Block>& blocks, const std::wstring& targetFolder, const std::wstring& robotName);
