@@ -2023,12 +2023,12 @@ LRESULT CALLBACK WndProc(
         CreateWindowW(L"BUTTON", L"ロボットにする", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 600, 9, 130, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_RUN)), GetModuleHandleW(nullptr), nullptr);
 
         // BMP 画像のロード
-        g_hBmpNew = (HBITMAP)LoadImageW(nullptr, L"new.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
-        g_hBmpOpen = (HBITMAP)LoadImageW(nullptr, L"open.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
-        g_hBmpSave = (HBITMAP)LoadImageW(nullptr, L"save.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
-        g_hBmpUndo = (HBITMAP)LoadImageW(nullptr, L"undo.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
-        g_hBmpRedo = (HBITMAP)LoadImageW(nullptr, L"redo.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
-        g_hBmpRun = (HBITMAP)LoadImageW(nullptr, L"run.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpNew = (HBITMAP)LoadImageW(nullptr, L"assets/new.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpOpen = (HBITMAP)LoadImageW(nullptr, L"assets/open.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpSave = (HBITMAP)LoadImageW(nullptr, L"assets/save.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpUndo = (HBITMAP)LoadImageW(nullptr, L"assets/undo.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpRedo = (HBITMAP)LoadImageW(nullptr, L"assets/redo.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+        g_hBmpRun = (HBITMAP)LoadImageW(nullptr, L"assets/run.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
 
         UpdateButtonColors();
         return 0; // ← WM_CREATE の最後に 1 回だけ return 0 します
@@ -2297,12 +2297,18 @@ LRESULT CALLBACK WndProc(
         case ID_TOOL_RUN:
             if (notification == BN_CLICKED)
             {
-                MessageBoxW(
-                    hwnd,
-                    L"Robocode実行処理は、まだ接続されていません。",
-                    L"実行",
-                    MB_OK | MB_ICONINFORMATION
-                );
+                const auto& blocks = g_manager.GetBlocks();
+                if (blocks.empty())
+                {
+                    MessageBoxW(hwnd, L"ブロックが配置されていません。", L"警告", MB_OK | MB_ICONWARNING);
+                    return 0;
+                }
+
+                // Javaファイル生成・コンパイル・Robocode起動をまとめた関数を呼び出す
+                if (ExportJava(blocks))
+                {
+                    // 成功時の処理（必要であれば）
+                }
             }
             return 0;
 

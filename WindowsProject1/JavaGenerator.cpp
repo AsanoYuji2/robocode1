@@ -265,7 +265,7 @@ bool ExportJava(const std::vector<Block>& blocks)
     file << code;
     file.close();
 
-    MessageBoxA(nullptr, "4. Javaファイルが正常に書き込まれました", "Debug", MB_OK);
+    MessageBoxA(nullptr, "ブロックが正常に書き込まれました！", "Debug", MB_OK);
 
     // コンパイル用バッチファイルの作成と実行
     const std::string root = "C:\\robocode";
