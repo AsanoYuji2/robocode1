@@ -1,3 +1,5 @@
+#include <shlobj.h>
+#include <filesystem>
 #include <windows.h>
 #include <windowsx.h>
 #include <cstdlib>
@@ -39,6 +41,8 @@ HWND g_mainWindow = nullptr;
 HWND g_numericEdit = nullptr;
 HWND g_undoButton = nullptr;
 HWND g_redoButton = nullptr;
+HWND g_editRobotName = nullptr;
+HWND g_editFolderPath = nullptr;
 int g_numericEditBlockIndex = -1;
 int g_numericEditField = 0; // 1=distance, 2=repeatCount, 3=waitSeconds, 4=conditionValue, 5=value
 WNDPROC g_oldNumericEditProc = nullptr;
@@ -129,6 +133,10 @@ constexpr int ID_TOOL_UNDO = 2104;
 constexpr int ID_TOOL_REDO = 2105;
 constexpr int ID_TOOL_RUN = 2106;
 constexpr int ID_TOOL_JAVA = 2107;
+// 画面上部に配置するためのコントロールID
+constexpr int ID_EDIT_ROBOT_NAME = 2201;
+constexpr int ID_EDIT_FOLDER_PATH = 2202;
+constexpr int ID_BTN_BROWSE = 2203;
 
 // アクセラレータテーブル
 HACCEL g_hAccel = nullptr;
@@ -1966,6 +1974,17 @@ void DrawNewLayout(HDC hdc, int width, int height)
     DrawRightPanel(hdc, canvasRight, 50, width, height);
 }
 
+// フォルダ選択ダイアログの初期フォルダを指定するためのコールバック
+static int CALLBACK BrowseCallbackProc(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData)
+{
+    if (uMsg == BFFM_INITIALIZED)
+    {
+        // lpData に渡された初期パスの文字列を設定する
+        SendMessage(hwnd, BFFM_SETSELECTIONW, TRUE, lpData);
+    }
+    return 0;
+}
+
 LRESULT CALLBACK WndProc(
     HWND hwnd,
     UINT msg,
@@ -2021,6 +2040,14 @@ LRESULT CALLBACK WndProc(
         CreateWindowW(L"BUTTON", L"元に戻す", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 460, 9, 65, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_UNDO)), GetModuleHandleW(nullptr), nullptr);
         CreateWindowW(L"BUTTON", L"やり直し", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 530, 9, 65, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_REDO)), GetModuleHandleW(nullptr), nullptr);
         CreateWindowW(L"BUTTON", L"ロボットにする", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 600, 9, 130, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_RUN)), GetModuleHandleW(nullptr), nullptr);
+        //ロボット名ラベルと入力欄
+        CreateWindowW(L"STATIC", L"ロボット名:", WS_CHILD | WS_VISIBLE, 740, 9, 70, 20, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        g_editRobotName = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"MyRobot", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 810, 7, 120, 26, hwnd, reinterpret_cast<HMENU>(ID_EDIT_ROBOT_NAME), GetModuleHandleW(nullptr), nullptr);
+
+        //保存先フォルダのパス入力欄と参照ボタン
+        CreateWindowW(L"STATIC", L"保存先:", WS_CHILD | WS_VISIBLE, 940, 9, 50, 20, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        g_editFolderPath = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"C:\\robocode\\robots", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 990, 7, 180, 26, hwnd, reinterpret_cast<HMENU>(ID_EDIT_FOLDER_PATH), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L"参照...", WS_CHILD | WS_VISIBLE, 1180, 7, 60, 28, hwnd, reinterpret_cast<HMENU>(ID_BTN_BROWSE), GetModuleHandleW(nullptr), nullptr);
 
         // BMP 画像のロード
         g_hBmpNew = (HBITMAP)LoadImageW(nullptr, L"assets/new.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
@@ -2207,6 +2234,58 @@ LRESULT CALLBACK WndProc(
         int id = LOWORD(wParam);
         int notification = HIWORD(wParam);
 
+        // 「参照...」ボタンが押されたとき
+        if (id == ID_BTN_BROWSE && notification == BN_CLICKED)
+        {
+            IFileDialog* pFileDialog = nullptr;
+            HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pFileDialog));
+
+            if (SUCCEEDED(hr))
+            {
+                //フォルダ選択モードにするためのフラグを設定
+                DWORD dwOptions;
+                if (SUCCEEDED(pFileDialog->GetOptions(&dwOptions)))
+                {
+                    pFileDialog->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+                }
+
+                //最初に開くフォルダを C:\robocode\robots に強制指定
+                IShellItem* pDefaultFolder = nullptr;
+                std::wstring initialPath = L"C:\\robocode\\robots";
+
+                // フォルダが存在しない場合に備えて自動作成しておく
+                std::filesystem::create_directories(initialPath);
+
+                if (SUCCEEDED(SHCreateItemFromParsingName(initialPath.c_str(), NULL, IID_PPV_ARGS(&pDefaultFolder))))
+                {
+                    pFileDialog->SetFolder(pDefaultFolder);
+                    pDefaultFolder->Release();
+                }
+
+                // ダイアログのタイトルを設定
+                pFileDialog->SetTitle(L"ロボットの保存先フォルダ（パッケージ）を選択してください");
+
+                //ダイアログを表示
+                if (SUCCEEDED(pFileDialog->Show(hwnd)))
+                {
+                    IShellItem* pResult = nullptr;
+                    if (SUCCEEDED(pFileDialog->GetResult(&pResult)))
+                    {
+                        PWSTR pszPath = nullptr;
+                        if (SUCCEEDED(pResult->GetDisplayName(SIGDN_FILESYSPATH, &pszPath)))
+                        {
+                            // 選択されたフォルダのパスをテキストボックスにセット
+                            SetWindowTextW(g_editFolderPath, pszPath);
+                            CoTaskMemFree(pszPath);
+                        }
+                        pResult->Release();
+                    }
+                }
+                pFileDialog->Release();
+            }
+            return 0;
+        }
+
         if (id == 1090 && notification == EN_KILLFOCUS)
         {
             FinishNumericEdit(hwnd, true);
@@ -2304,8 +2383,21 @@ LRESULT CALLBACK WndProc(
                     return 0;
                 }
 
+                //画面上の入力欄からテキストを取得
+                wchar_t robotName[256]{};
+                wchar_t folderPath[MAX_PATH]{};
+                GetWindowTextW(g_editRobotName, robotName, 256);
+                GetWindowTextW(g_editFolderPath, folderPath, MAX_PATH);
+
+                if (wcslen(robotName) == 0)
+                {
+                    MessageBoxW(hwnd, L"ロボット名を入力してください。", L"エラー", MB_OK | MB_ICONWARNING);
+                    SetFocus(g_editRobotName);
+                    return 0;
+                }
+
                 // Javaファイル生成・コンパイル・Robocode起動をまとめた関数を呼び出す
-                if (ExportJava(blocks))
+                if (ExportJavaCustom(blocks, folderPath, robotName))
                 {
                     // 成功時の処理（必要であれば）
                 }
@@ -2687,7 +2779,28 @@ LRESULT CALLBACK WndProc(
         if (p.x >= 10 && p.x <= 140 &&
             p.y >= 10 && p.y <= 48)
         {
-            ExportJava(g_manager.GetBlocks());
+            const auto& blocks = g_manager.GetBlocks();
+            if (blocks.empty())
+            {
+                MessageBoxW(hwnd, L"ブロックが配置されていません。", L"警告", MB_OK | MB_ICONWARNING);
+                return 0;
+            }
+
+            // 画面のテキストボックスから「ロボット名」と「保存先フォルダ」を取得
+            wchar_t robotName[256]{};
+            wchar_t folderPath[MAX_PATH]{};
+            GetWindowTextW(g_editRobotName, robotName, 256);
+            GetWindowTextW(g_editFolderPath, folderPath, MAX_PATH);
+
+            if (wcslen(robotName) == 0)
+            {
+                MessageBoxW(hwnd, L"ロボット名を入力してください。", L"エラー", MB_OK | MB_ICONWARNING);
+                SetFocus(g_editRobotName);
+                return 0;
+            }
+
+            // 3つの引数を渡して実行
+            ExportJavaCustom(blocks, folderPath, robotName);
             return 0;
         }
 

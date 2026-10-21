@@ -34,44 +34,30 @@ std::wstring SelectSavePath()
     return L"";
 }
 
-bool ExportJava(const std::vector<Block>& blocks)
+bool ExportJavaCustom(const std::vector<Block>& blocks, const std::wstring& targetFolder, const std::wstring& robotName)
 {
-    //MessageBoxA(nullptr, "ExportJava called!", "Debug", MB_OK);
+    std::wstring debugMsg = L"ä¿å­˜å…ˆ: " + targetFolder + L"\nãƒ­ãƒœãƒƒãƒˆå: " + robotName;
+    MessageBoxW(nullptr, debugMsg.c_str(), L"ãƒ‡ãƒãƒƒã‚°ç¢ºèª", MB_OK);
 
-    std::wstring savePath = SelectSavePath();
-
-    if (savePath.empty())
+    if (targetFolder.empty() || robotName.empty())
+    {
+        MessageBoxW(nullptr, L"ãƒ­ãƒœãƒƒãƒˆåã¾ãŸã¯ä¿å­˜å…ˆãƒ•ã‚©ãƒ«ãƒ€ãŒå…¥åŠ›ã•ã‚Œã¦ã„ã¾ã›ã‚“ã€‚", L"ã‚¨ãƒ©ãƒ¼", MB_OK);
         return false;
+    }
 
-    // 1. “ü—Í‚³‚ê‚½ƒpƒX‚ğ filesystem::path ‚É•ÏŠ·
-    std::filesystem::path inputPath(savePath);
+    std::filesystem::path dirPath(targetFolder);
+    std::filesystem::path finalJavaPath = dirPath / (robotName + L".java");
 
-    // ƒNƒ‰ƒX–¼iƒtƒ@ƒCƒ‹–¼‚©‚çŠg’£q‚ğœ‚¢‚½‚à‚Ìj‚ğæ“¾
-    std::string className = inputPath.stem().string();
+    std::string className = std::string(robotName.begin(), robotName.end());
+    std::string packageName = dirPath.filename().string();
 
-    // 2. ƒtƒHƒ‹ƒ_–¼ieƒtƒHƒ‹ƒ_–¼j‚ğƒpƒbƒP[ƒW–¼‚Æ‚µ‚Ä“®“I‚Éæ“¾‚·‚é
-    std::string packageName = inputPath.parent_path().filename().string();
-
-    // 3. •Û‘¶æ‚ÌŠî€ƒfƒBƒŒƒNƒgƒŠ
-    std::filesystem::path rootRobots = "C:\\robocode\\robots";
-
-    // ƒpƒbƒP[ƒW–¼‚ª‹óA‚Ü‚½‚Í "robots" ‚Ì’¼Ú‰º‚ğw’è‚³‚ê‚½ê‡‚Ì’²®
-    std::filesystem::path targetDir;
-    if (packageName.empty() || packageName == "robots") {
+    if (packageName == "robots" || packageName.empty()) {
         packageName = "";
-        targetDir = rootRobots;
+        dirPath = "C:\\robocode\\robots";
     }
-    else {
-        targetDir = rootRobots / packageName;
-    }
+    finalJavaPath = dirPath / (robotName + L".java");
 
-    // ƒtƒHƒ‹ƒ_‚ª‚È‚¯‚ê‚Îì¬
-    std::filesystem::create_directories(targetDir);
-
-    // 4. ÅI“I‚ÈJavaƒtƒ@ƒCƒ‹‚ÌƒpƒX
-    std::filesystem::path finalJavaPath = targetDir / (className + ".java");
-
-   // MessageBoxA(nullptr, "3. Class & Package obtained!", "Debug", MB_OK);
+    std::filesystem::create_directories(dirPath);
 
     std::vector<Block> ordered = blocks;
 
@@ -89,19 +75,19 @@ bool ExportJava(const std::vector<Block>& blocks)
 
     std::string code = "";
 
-    // ƒpƒbƒP[ƒW–¼‚ª‚ ‚éê‡‚Ì‚İƒpƒbƒP[ƒWéŒ¾‚ğ•t—^‚·‚é
+    // ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸åãŒã‚ã‚‹å ´åˆã®ã¿ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸å®£è¨€ã‚’ä»˜ä¸ã™ã‚‹
     if (!packageName.empty())
     {
         code += "package " + packageName + ";\n\n";
     }
 
-    // ƒCƒ“ƒ|[ƒg•¶
+    // ã‚¤ãƒ³ãƒãƒ¼ãƒˆæ–‡
     code +=
         "import robocode.*;\n"
         "import java.awt.Color;\n"
         "import static robocode.util.Utils.normalRelativeAngleDegrees;\n\n";
 
-    // ƒNƒ‰ƒX’è‹`
+    // ã‚¯ãƒ©ã‚¹å®šç¾©
     code +=
         "public class " + className +
         " extends AdvancedRobot\n{\n"
@@ -255,31 +241,31 @@ bool ExportJava(const std::vector<Block>& blocks)
         "    }\n"
         "}\n";
 
-    // 5. ³‚µ‚¢ finalJavaPath ‚ÉŒü‚©‚Á‚Äƒtƒ@ƒCƒ‹‚ğ‘‚«‚Ş
+    // 5. æ­£ã—ã„ finalJavaPath ã«å‘ã‹ã£ã¦ãƒ•ã‚¡ã‚¤ãƒ«ã‚’æ›¸ãè¾¼ã‚€
     std::ofstream file(finalJavaPath.string(), std::ios::binary | std::ios::trunc);
     if (!file.is_open())
     {
-        MessageBoxA(nullptr, "Error: Failed to open file for writing!", "Debug", MB_OK);
+        MessageBoxW(nullptr, L"ä½œæˆã«å¤±æ•—ã—ã¾ã—ãŸï¼", L"ã‚¨ãƒ©ãƒ¼", MB_OK);
         return false;
     }
     file << code;
     file.close();
 
-    MessageBoxA(nullptr, "ƒuƒƒbƒN‚ª³í‚É‘‚«‚Ü‚ê‚Ü‚µ‚½I", "Debug", MB_OK);
+    MessageBoxW(nullptr, L"ãƒ–ãƒ­ãƒƒã‚¯ãŒæ­£å¸¸ã«æ›¸ãè¾¼ã¾ã‚Œã¾ã—ãŸï¼", L"ãƒ‡ãƒãƒƒã‚¯", MB_OK);
 
-    // ƒRƒ“ƒpƒCƒ‹—pƒoƒbƒ`ƒtƒ@ƒCƒ‹‚Ìì¬‚ÆÀs
+    // ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ç”¨ãƒãƒƒãƒãƒ•ã‚¡ã‚¤ãƒ«ã®ä½œæˆã¨å®Ÿè¡Œ
     const std::string root = "C:\\robocode";
-    std::string javac = "C:\\ƒCƒ“ƒ^[ƒ“\\jdk-17.0.7+7\\bin\\javac.exe";
+    std::string javac = "C:\\Java\\jdk-17.0.7+7\\bin\\javac.exe";
     std::string logPath = root + "\\javac_log.txt";
     std::string batPath = root + "\\compile_temp.bat";
 
     {
         std::ofstream bat(batPath);
-        bat << "@echo off\n";
-        // 1. ƒRƒ“ƒpƒCƒ‹‚ğÀs
+        bat << "@echo off\nchcp 65001 > nul\n";
+        // 1. ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ã‚’å®Ÿè¡Œ
         bat << "\"" << javac << "\" -encoding UTF-8 -source 8 -target 8 -d \"" << root << "\\robots\" -cp \"" << root << "\\libs\\robocode.jar\" \"" << finalJavaPath.string() << "\" > \"" << logPath << "\" 2>&1\n";
 
-        // 2. ŠmÀ‚Éì‹ÆƒfƒBƒŒƒNƒgƒŠ‚ğˆÚ“®‚µ‚ÄRobocode‚ğ‹N“®‚·‚é
+        // 2. ç¢ºå®Ÿã«ä½œæ¥­ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚’ç§»å‹•ã—ã¦Robocodeã‚’èµ·å‹•ã™ã‚‹
         bat << "cd /d \"" << root << "\"\n";
         bat << "call robocode.bat\n"; 
 
@@ -288,13 +274,13 @@ bool ExportJava(const std::vector<Block>& blocks)
 
     //MessageBoxA(nullptr, "5. Running javac & Robocode via batch...", "Debug", MB_OK);
 
-    // ƒoƒbƒ`‚ğÀs
+    // ãƒãƒƒãƒã‚’å®Ÿè¡Œ
     int result = std::system(batPath.c_str());
 
     std::ifstream logFile(logPath);
     std::string output((std::istreambuf_iterator<char>(logFile)), std::istreambuf_iterator<char>());
     if (output.empty()) {
-        output = (result == 0) ? "ƒRƒ“ƒpƒCƒ‹‚ªI—¹‚µ‚Ü‚µ‚½" : "ƒRƒ“ƒpƒCƒ‹ƒGƒ‰[‚Å‚·";
+        output = (result == 0) ? "ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ãŒçµ‚äº†ã—ã¾ã—ãŸ" : "ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ã‚¨ãƒ©ãƒ¼ã§ã™";
     }
 
     MessageBoxA(nullptr, output.c_str(), "javac Result", MB_OK);
