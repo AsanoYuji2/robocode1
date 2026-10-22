@@ -450,19 +450,36 @@ std::wstring GetBlockName(const Block& b)
         // 砲塔・レーダー
     case BlockType::TurnGunRight:
         return L"砲塔を右に " +
-            std::to_wstring(b.degrees) + L" 度旋回";
+            [&]() {
+            std::wostringstream stream;
+            stream << std::fixed << std::setprecision(2) << b.degrees;
+            return stream.str();
+            }() + L" 度旋回";
 
     case BlockType::TurnGunLeft:
         return L"砲塔を左に " +
-            std::to_wstring(b.degrees) + L" 度旋回";
+            [&]() {
+            std::wostringstream stream;
+            stream << std::fixed << std::setprecision(2) << b.degrees;
+            return stream.str();
+            }() + L" 度旋回";
 
     case BlockType::TurnRadarRight:
         return L"レーダーを右に " +
-            std::to_wstring(b.degrees) + L" 度旋回";
+            [&]() {
+            std::wostringstream stream;
+            stream << std::fixed << std::setprecision(2) << b.degrees;
+            return stream.str();
+            }() + L" 度旋回";
 
     case BlockType::TurnRadarLeft:
         return L"レーダーを左に " +
-            std::to_wstring(b.degrees) + L" 度旋回";
+            [&]() {
+            std::wostringstream stream;
+            stream << std::fixed << std::setprecision(2) << b.degrees;
+            return stream.str();
+            }() + L" 度旋回";
+
 
     case BlockType::SetAdjustGunForRobotTurn:
         return L"車体旋回時に砲塔を独立させる";
@@ -603,14 +620,64 @@ std::wstring GetBlockName(BlockType type)
 }
 
 // ============================================================
+// フォントを小さくする対象ブロック
+// ============================================================
+
+static bool IsSmallFontBlock(BlockType type)
+{
+    switch (type)
+    {
+    case BlockType::CreateVariable:
+    case BlockType::SetVariable:
+    case BlockType::TurnGunRight:
+    case BlockType::TurnGunLeft:
+    case BlockType::TurnRadarRight:
+    case BlockType::TurnRadarLeft:
+    case BlockType::SetRadarColor:
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+// ============================================================
+// 横幅を広げる対象ブロック
+// ============================================================
+
+static bool IsWideBlock(BlockType type)
+{
+    switch (type)
+    {
+    case BlockType::SmartFire:
+    case BlockType::ForwardBackwardGun360:
+    case BlockType::SetAdjustGunForRobotTurn:
+    case BlockType::SetAdjustRadarForRobotTurn:
+    case BlockType::SetAdjustRadarForGunTurn:
+    case BlockType::GetBattleFieldHeight:
+    case BlockType::GetBattleFieldWidth:
+    case BlockType::TurnRadarRight:
+    case BlockType::TurnRadarLeft:
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+// ============================================================
 // 当たり判定
 // ============================================================
 
 bool HitBlock(const Block& b, int x, int y)
 {
+    const int hitWidth = IsWideBlock(b.type)
+        ? (std::max)(b.w, 100)
+        : b.w;
+
     return
         x >= b.x &&
-        x <= b.x + b.w &&
+        x <= b.x + hitWidth &&
         y >= b.y &&
         y <= b.y + b.h;
 }
@@ -618,6 +685,7 @@ bool HitBlock(const Block& b, int x, int y)
 // ============================================================
 // ブロック描画
 // ============================================================
+
 void DrawBlock(HDC hdc, const Block& b, bool glowing)
 {
     if (!hdc)
@@ -625,7 +693,16 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
     const int tabH = 8;
 
-    // 自作関数の呼び出しは「関数」だと見分けやすい紫色で表示する。
+    // ========================================================
+    // 描画幅
+    // ========================================================
+    const int drawWidth = IsWideBlock(b.type)
+        ? (std::max)(b.w, 250)
+        : b.w;
+
+    // ========================================================
+    // ブロックの色
+    // ========================================================
     COLORREF blockColor = IsUserFunctionCall(b)
         ? RGB(150, 85, 205)
         : GetBlockCategoryColor(b.type);
@@ -648,7 +725,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     HGDIOBJ oldPen = SelectObject(hdc, pen);
 
     // ========================================================
-    // Repeat：C字型ブロックと内側上部の下向き突起
+    // Repeat：C字型ブロック
     // ========================================================
     if (b.type == BlockType::Repeat)
     {
@@ -680,7 +757,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             { x + wallW, y + headerH },
             { x + wallW, y + h - bottomH },
 
-            // 下側の中身のへこみ（変更なし）
+            // 下側の中身のへこみ
             { x + wallW + 24, y + h - bottomH },
             { x + wallW + 24, y + h - bottomH + 8 },
             { x + wallW + 64, y + h - bottomH + 8 },
@@ -690,7 +767,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             { x + w, y + h - bottomH },
             { x + w, y + h },
 
-            // 下側の接続用タブを下向きの突起にする
+            // 下側の接続用タブ
             { x + tabX + tabW, y + h },
             { x + tabX + tabW, y + h + tabH },
             { x + tabX, y + h + tabH },
@@ -700,7 +777,6 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             { x, y + h }
         };
 
-        // ブロック本体を描画
         Polygon(
             hdc,
             points,
@@ -724,7 +800,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             DeleteObject(bgBrush);
         }
 
-        // 内側上部の接続用タブ
+        // 内側上部の下向き接続タブ
         POINT innerTab[] =
         {
             { x + wallW + 24, y + headerH - 1 },
@@ -759,8 +835,13 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             repeatName.c_str(),
             -1,
             &textRect,
-            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS
+            DT_LEFT | DT_VCENTER |
+            DT_SINGLELINE | DT_END_ELLIPSIS
         );
+
+        // GDIオブジェクトを元に戻して解放
+        SelectObject(hdc, oldPen);
+        SelectObject(hdc, oldBrush);
 
         DeleteObject(pen);
         DeleteObject(brush);
@@ -769,19 +850,18 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     }
 
     // ========================================================
-    // 通常ブロック
+    // 通常ブロックの本体
     // ========================================================
-
     POINT points[] =
     {
-        { b.x,       b.y },
-        { b.x + 24,  b.y },
-        { b.x + 24,  b.y + tabH },
-        { b.x + 64,  b.y + tabH },
-        { b.x + 64,  b.y },
-        { b.x + b.w, b.y },
-        { b.x + b.w, b.y + b.h },
-        { b.x,       b.y + b.h }
+        { b.x,             b.y },
+        { b.x + 24,        b.y },
+        { b.x + 24,        b.y + tabH },
+        { b.x + 64,        b.y + tabH },
+        { b.x + 64,        b.y },
+        { b.x + drawWidth, b.y },
+        { b.x + drawWidth, b.y + b.h },
+        { b.x,             b.y + b.h }
     };
 
     Polygon(
@@ -790,7 +870,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         sizeof(points) / sizeof(points[0])
     );
 
-    // 下側の突起
+    // 下側の接続用タブ
     RECT tab =
     {
         b.x + 24,
@@ -801,17 +881,44 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
     FillRect(hdc, &tab, brush);
 
-    // ブロック名
+    // ========================================================
+    // ブロック名とフォントサイズ
+    // ========================================================
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 255, 255));
 
     const std::wstring name = GetBlockName(b);
 
+    // フォントを小さくする対象だけフォントサイズを変更
+    const int fontHeight = IsSmallFontBlock(b.type) ? -14 : -16;
+
+    HFONT font = CreateFontW(
+        fontHeight,
+        0,
+        0,
+        0,
+        FW_NORMAL,
+        FALSE,
+        FALSE,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        L"Meiryo UI"
+    );
+
+    HGDIOBJ oldFont = nullptr;
+
+    if (font)
+        oldFont = SelectObject(hdc, font);
+
     RECT textRect =
     {
         b.x + 12,
         b.y + 10,
-        b.x + b.w - 8,
+        b.x + drawWidth - 8,
         b.y + b.h - 4
     };
 
@@ -824,7 +931,15 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         DT_SINGLELINE | DT_END_ELLIPSIS
     );
 
+    if (font)
+    {
+        SelectObject(hdc, oldFont);
+        DeleteObject(font);
+    }
+
+    // ========================================================
     // 色変更ブロックの色見本
+    // ========================================================
     COLORREF previewColor = RGB(0, 0, 0);
     bool showColorPreview = true;
 
@@ -859,9 +974,9 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     {
         RECT colorRect =
         {
-            b.x + b.w - 34,
+            b.x + drawWidth - 34,
             b.y + 17,
-            b.x + b.w - 12,
+            b.x + drawWidth - 12,
             b.y + 39
         };
 
@@ -883,7 +998,9 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         }
     }
 
+    // ========================================================
     // GDIオブジェクトを元に戻して解放
+    // ========================================================
     SelectObject(hdc, oldPen);
     SelectObject(hdc, oldBrush);
 
