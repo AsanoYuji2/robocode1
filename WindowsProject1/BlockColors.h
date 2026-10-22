@@ -123,3 +123,4 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
         return RGB(100, 100, 100);
     }
 }
+//他のファイルを1つのファイルを分割して送るので全て送るまで待って

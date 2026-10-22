@@ -7,6 +7,7 @@
 #include <cstdlib>
 
 #include "JavaGenerator.h"
+#include "UserFunction.h"
 
 std::wstring SelectSavePath()
 {
@@ -34,7 +35,72 @@ std::wstring SelectSavePath()
     return L"";
 }
 
-bool ExportJavaCustom(const std::vector<Block>& blocks, const std::wstring& targetFolder, const std::wstring& robotName)
+namespace
+{
+    void ExpandFunctionCalls(
+        const std::vector<Block>& input,
+        const std::vector<UserDefinedFunction>& functions,
+        std::vector<std::wstring>& callStack,
+        std::vector<Block>& output,
+        int depth)
+    {
+        // 画面上の並び順に合わせて処理する。
+        std::vector<Block> ordered = input;
+        std::sort(ordered.begin(), ordered.end(),
+            [](const Block& a, const Block& b)
+            {
+                if (a.x != b.x) return a.x < b.x;
+                return a.y < b.y;
+            });
+
+        // 間違った呼び出しによる無限ループを防ぐ。
+        if (depth > 32)
+            return;
+
+        for (const Block& block : ordered)
+        {
+            if (!IsUserFunctionCall(block))
+            {
+                output.push_back(block);
+                continue;
+            }
+
+            const std::wstring functionName = GetUserFunctionCallName(block);
+            auto found = std::find_if(functions.begin(), functions.end(),
+                [&](const UserDefinedFunction& function)
+                {
+                    return function.name == functionName;
+                });
+
+            // 削除済みなどで呼び出し先がない場合は、そのブロックを出力しない。
+            if (found == functions.end())
+                continue;
+
+            // A -> B -> A のような循環呼び出しを防止。
+            if (std::find(callStack.begin(), callStack.end(), functionName) != callStack.end())
+                continue;
+
+            callStack.push_back(functionName);
+            ExpandFunctionCalls(found->blocks, functions, callStack, output, depth + 1);
+            callStack.pop_back();
+        }
+    }
+}
+
+bool ExportJavaCustom(
+    const std::vector<Block>& blocks,
+    const std::wstring& targetFolder,
+    const std::wstring& robotName)
+{
+    return ExportJavaCustom(blocks, targetFolder, robotName,
+        std::vector<UserDefinedFunction>{});
+}
+
+bool ExportJavaCustom(
+    const std::vector<Block>& blocks,
+    const std::wstring& targetFolder,
+    const std::wstring& robotName,
+    const std::vector<UserDefinedFunction>& functions)
 {
     std::wstring debugMsg = L"保存先: " + targetFolder + L"\nロボット名: " + robotName;
     MessageBoxW(nullptr, debugMsg.c_str(), L"デバッグ確認", MB_OK);
@@ -59,19 +125,11 @@ bool ExportJavaCustom(const std::vector<Block>& blocks, const std::wstring& targ
 
     std::filesystem::create_directories(dirPath);
 
-    std::vector<Block> ordered = blocks;
-
-    std::sort(
-        ordered.begin(),
-        ordered.end(),
-        [](const Block& a, const Block& b)
-        {
-            if (a.x != b.x)
-                return a.x < b.x;
-
-            return a.y < b.y;
-        }
-    );
+    // 自作関数の呼び出しを、その関数の中身に置き換えてからJavaコードを作る。
+    // こうすることで、生成されたJava側に未知の関数名が残らない。
+    std::vector<Block> ordered;
+    std::vector<std::wstring> callStack;
+    ExpandFunctionCalls(blocks, functions, callStack, ordered, 0);
 
     std::string code = "";
 
@@ -471,7 +529,7 @@ bool ExportJavaCustom(const std::vector<Block>& blocks, const std::wstring& targ
 
         // 2. 確実に作業ディレクトリを移動してRobocodeを起動する
         bat << "cd /d \"" << root << "\"\n";
-        bat << "call robocode.bat\n"; 
+        bat << "call robocode.bat\n";
 
         bat << "exit\n";
     }

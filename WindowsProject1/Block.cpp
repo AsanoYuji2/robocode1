@@ -1,5 +1,6 @@
 #include "Block.h"
 #include "BlockColors.h"
+#include "UserFunction.h"
 
 #include <algorithm>
 #include <chrono>
@@ -294,6 +295,9 @@ static std::wstring FormatNumber(double value)
 
 std::wstring GetBlockName(const Block& b)
 {
+    if (IsUserFunctionCall(b))
+        return L"関数を実行： " + GetUserFunctionCallName(b);
+
     switch (b.type)
     {
     case BlockType::Move:
@@ -621,7 +625,10 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
     const int tabH = 8;
 
-    COLORREF blockColor = GetBlockCategoryColor(b.type);
+    // 自作関数の呼び出しは「関数」だと見分けやすい紫色で表示する。
+    COLORREF blockColor = IsUserFunctionCall(b)
+        ? RGB(150, 85, 205)
+        : GetBlockCategoryColor(b.type);
 
     if (glowing)
         blockColor = MakeBrighterColor(blockColor);
@@ -760,7 +767,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
         return;
     }
-    
+
     // ========================================================
     // 通常ブロック
     // ========================================================

@@ -8,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include <cwchar>
+#include <utility>
 
 #include <commdlg.h>
 #include <gdiplus.h>
@@ -15,7 +16,9 @@
 #include "BlockManager.h"
 #include "JavaGenerator.h"
 #include "BlockFileManager.h"
-#include"BlockColors.h"
+#include "BlockColors.h"
+#include "UserFunction.h"
+#include "UserFunctionStorage.h"
 
 #pragma comment(lib, "Comdlg32.lib")
 #pragma comment(lib, "gdiplus.lib")
@@ -27,6 +30,10 @@ using namespace Gdiplus;
 // ============================================================
 
 BlockManager g_manager;
+BlockManager g_functionManager;
+bool g_isEditingFunction = false;
+std::wstring g_currentFunctionName;
+std::vector<UserDefinedFunction> g_userFunctions;
 
 // ============================================================
 // ウィンドウハンドル
@@ -43,10 +50,11 @@ HWND g_undoButton = nullptr;
 HWND g_redoButton = nullptr;
 HWND g_editRobotName = nullptr;
 HWND g_editFolderPath = nullptr;
-int g_activeSidebarTab = 0; // 0: メイン, 1: 関数
+int g_activeSidebarTab = 0; // 0: メイン, 1: 関数一覧, 2: 関数編集中
 HWND g_tabMainBtn = nullptr;
 HWND g_tabFuncBtn = nullptr;
 HWND g_createdFuncList = nullptr; // 作成した関数を表示するリストボックス
+HWND g_functionHelpLabel = nullptr; // 関数一覧・編集の操作説明
 int g_numericEditBlockIndex = -1;
 int g_numericEditField = 0; // 1=distance, 2=repeatCount, 3=waitSeconds, 4=conditionValue, 5=value
 WNDPROC g_oldNumericEditProc = nullptr;
@@ -75,6 +83,7 @@ bool g_isResizingList = false;
 int g_listWidth = 220;
 
 BlockType g_dragBlockType = BlockType::Move;
+std::wstring g_dragBlockFunctionName; // ドラッグ中の自作関数名（空なら通常ブロック）
 
 POINT g_dragStart = { 0, 0 };
 POINT g_lastPanPoint = { 0, 0 };
@@ -229,11 +238,361 @@ WNDPROC g_oldCategoryProcs[CATEGORY_COUNT] = {};
 
 // 現在のカテゴリに表示するブロック
 std::vector<BlockType> g_visibleBlockTypes;
+std::vector<std::wstring> g_visibleFunctionNames; // g_visibleBlockTypes と同じ項目数
 
 // ボタンの色
 const COLORREF COLOR_NORMAL = RGB(65, 65, 75);
 const COLORREF COLOR_ADD_ON = RGB(40, 120, 220);
 const COLORREF COLOR_DELETE_ON = RGB(220, 65, 65);
+
+// ============================================================
+// 関数編集の共通処理
+// ============================================================
+
+BlockManager& ActiveManager()
+{
+    return g_isEditingFunction ? g_functionManager : g_manager;
+}
+
+void InvalidateEditor();
+void UpdateButtonColors();
+void UpdateView();
+void InitializeBlockList(HWND list);
+
+int FindUserFunctionIndex(const std::wstring& name)
+{
+    for (int i = 0; i < static_cast<int>(g_userFunctions.size()); ++i)
+    {
+        if (g_userFunctions[static_cast<size_t>(i)].name == name)
+            return i;
+    }
+    return -1;
+}
+
+void ReloadUserFunctions()
+{
+    std::vector<UserDefinedFunction> loaded;
+    if (LoadUserFunctions(loaded))
+        g_userFunctions = std::move(loaded);
+}
+
+std::wstring TrimFunctionName(std::wstring value)
+{
+    auto isSpace = [](wchar_t ch) { return ch == L' ' || ch == L'\t' || ch == L'\r' || ch == L'\n'; };
+    while (!value.empty() && isSpace(value.front())) value.erase(value.begin());
+    while (!value.empty() && isSpace(value.back())) value.pop_back();
+    return value;
+}
+
+struct FunctionNameDialogState
+{
+    HWND edit = nullptr;
+    std::wstring value;
+    bool accepted = false;
+};
+
+constexpr int ID_FUNCTION_NAME_EDIT = 1;
+constexpr int ID_FUNCTION_NAME_OK = 2;
+constexpr int ID_FUNCTION_NAME_CANCEL = 3;
+
+LRESULT CALLBACK FunctionNameDialogProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    auto* state = reinterpret_cast<FunctionNameDialogState*>(
+        GetWindowLongPtrW(window, GWLP_USERDATA));
+
+    if (message == WM_NCCREATE)
+    {
+        const auto* createInfo = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+        state = static_cast<FunctionNameDialogState*>(createInfo->lpCreateParams);
+        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+    }
+
+    switch (message)
+    {
+    case WM_CREATE:
+        CreateWindowW(L"STATIC", L"関数の名前を入力してください。", WS_CHILD | WS_VISIBLE,
+            18, 16, 340, 24, window, nullptr, GetModuleHandleW(nullptr), nullptr);
+        state->edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"MyFunction",
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+            18, 44, 340, 28, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_FUNCTION_NAME_EDIT)),
+            GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L"作成", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            184, 88, 80, 30, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_FUNCTION_NAME_OK)),
+            GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L"キャンセル", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            274, 88, 84, 30, window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_FUNCTION_NAME_CANCEL)),
+            GetModuleHandleW(nullptr), nullptr);
+        SetFocus(state->edit);
+        SendMessageW(state->edit, EM_SETSEL, 0, -1);
+        return 0;
+
+    case WM_COMMAND:
+        if (LOWORD(wParam) == ID_FUNCTION_NAME_OK)
+        {
+            wchar_t buffer[256]{};
+            GetWindowTextW(state->edit, buffer, 256);
+            state->value = TrimFunctionName(buffer);
+            state->accepted = true;
+            DestroyWindow(window);
+            return 0;
+        }
+        if (LOWORD(wParam) == ID_FUNCTION_NAME_CANCEL)
+        {
+            DestroyWindow(window);
+            return 0;
+        }
+        break;
+
+    case WM_CLOSE:
+        DestroyWindow(window);
+        return 0;
+    }
+
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+bool PromptForFunctionName(HWND owner, std::wstring& result)
+{
+    static bool classRegistered = false;
+    const wchar_t* className = L"BlockEditorFunctionNameDialog";
+
+    if (!classRegistered)
+    {
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = FunctionNameDialogProc;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        wc.lpszClassName = className;
+        if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+            return false;
+        classRegistered = true;
+    }
+
+    FunctionNameDialogState state;
+    HWND dialog = CreateWindowExW(
+        WS_EX_DLGMODALFRAME,
+        className,
+        L"新しい関数を作成",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP,
+        CW_USEDEFAULT, CW_USEDEFAULT, 390, 165,
+        owner, nullptr, GetModuleHandleW(nullptr), &state);
+
+    if (!dialog)
+        return false;
+
+    if (owner) EnableWindow(owner, FALSE);
+    RECT ownerRect{};
+    if (owner && GetWindowRect(owner, &ownerRect))
+    {
+        SetWindowPos(dialog, HWND_TOP,
+            ownerRect.left + ((ownerRect.right - ownerRect.left) - 390) / 2,
+            ownerRect.top + ((ownerRect.bottom - ownerRect.top) - 165) / 2,
+            390, 165, SWP_SHOWWINDOW);
+    }
+    else
+    {
+        ShowWindow(dialog, SW_SHOW);
+    }
+    UpdateWindow(dialog);
+
+    MSG msg{};
+    while (IsWindow(dialog))
+    {
+        const BOOL gotMessage = GetMessageW(&msg, nullptr, 0, 0);
+        if (gotMessage <= 0)
+        {
+            if (IsWindow(dialog)) DestroyWindow(dialog);
+            break;
+        }
+        if (!IsDialogMessageW(dialog, &msg))
+        {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    if (owner)
+    {
+        EnableWindow(owner, TRUE);
+        SetForegroundWindow(owner);
+    }
+
+    if (!state.accepted)
+        return false;
+
+    result = TrimFunctionName(state.value);
+    return !result.empty();
+}
+
+bool SaveCurrentFunction()
+{
+    if (!g_isEditingFunction || g_currentFunctionName.empty())
+        return true;
+
+    UserDefinedFunction updated;
+    updated.name = g_currentFunctionName;
+    updated.blocks = ActiveManager().GetBlocks();
+    updated.parents = ActiveManager().GetParents();
+    updated.repeatBodies = ActiveManager().GetRepeatBodies();
+
+    if (!SaveUserFunction(updated))
+    {
+        MessageBoxW(g_mainWindow,
+            L"関数を保存できませんでした。保存先フォルダやファイルのアクセス権を確認してください。",
+            L"関数の保存エラー", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    const int index = FindUserFunctionIndex(updated.name);
+    if (index >= 0)
+        g_userFunctions[static_cast<size_t>(index)] = std::move(updated);
+    else
+        g_userFunctions.push_back(std::move(updated));
+
+    return true;
+}
+
+void RefreshFunctionList()
+{
+    if (!g_createdFuncList)
+        return;
+
+    SendMessageW(g_createdFuncList, LB_RESETCONTENT, 0, 0);
+    const std::wstring createLabel = L"＋ 新しい関数を作る";
+    SendMessageW(g_createdFuncList, LB_ADDSTRING, 0,
+        reinterpret_cast<LPARAM>(createLabel.c_str()));
+
+    for (const auto& function : g_userFunctions)
+    {
+        SendMessageW(g_createdFuncList, LB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(function.name.c_str()));
+    }
+
+    SendMessageW(g_createdFuncList, LB_SETCURSEL, static_cast<WPARAM>(-1), 0);
+}
+
+void SetFunctionHelp(const wchar_t* text, bool show)
+{
+    if (!g_functionHelpLabel)
+        return;
+    SetWindowTextW(g_functionHelpLabel, text);
+    ShowWindow(g_functionHelpLabel, show ? SW_SHOW : SW_HIDE);
+}
+
+void CloseBlockPalette()
+{
+    if (g_blockList)
+        ShowWindow(g_blockList, SW_HIDE);
+    g_showBlockList = false;
+
+    if (g_canvasLeft != 230)
+    {
+        const int delta = 230 - g_canvasLeft;
+        g_canvasLeft = 230;
+        g_viewX += delta;
+    }
+    UpdateView();
+}
+
+bool OpenUserFunctionEditor(const std::wstring& name)
+{
+    if (g_isEditingFunction && g_currentFunctionName != name)
+    {
+        if (!SaveCurrentFunction())
+            return false;
+    }
+
+    UserDefinedFunction function;
+    if (!LoadUserFunction(name, function))
+    {
+        MessageBoxW(g_mainWindow, L"関数を読み込めませんでした。ファイルが壊れていないか確認してください。",
+            L"読み込みエラー", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    if (!g_functionManager.ReplaceBlocks(function.blocks, function.parents, function.repeatBodies))
+    {
+        MessageBoxW(g_mainWindow, L"関数のブロック構造が正しくないため、編集画面を開けませんでした。",
+            L"読み込みエラー", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    g_currentFunctionName = name;
+    g_isEditingFunction = true;
+    g_activeSidebarTab = 2;
+    CloseBlockPalette();
+    if (g_createdFuncList) ShowWindow(g_createdFuncList, SW_HIDE);
+    for (int i = 0; i < CATEGORY_COUNT; ++i)
+        if (g_categoryButtons[i]) ShowWindow(g_categoryButtons[i], SW_SHOW);
+    SetFunctionHelp(L"左のカテゴリからブロックを選び、一覧からキャンバスへドラッグします。\n数字の部分をクリックすると値を変更できます。\nDelete：削除 / Ctrl+Z：元に戻す", true);
+    UpdateView();
+    UpdateButtonColors();
+    InvalidateEditor();
+    return true;
+}
+
+bool CreateUserFunction(HWND owner)
+{
+    std::wstring name;
+    if (!PromptForFunctionName(owner, name))
+        return false;
+
+    std::wstring reason;
+    if (!IsValidUserFunctionName(name, &reason))
+    {
+        MessageBoxW(owner, reason.c_str(), L"関数名を確認してください", MB_OK | MB_ICONWARNING);
+        return false;
+    }
+
+    ReloadUserFunctions();
+    if (FindUserFunctionIndex(name) >= 0 ||
+        std::filesystem::exists(GetUserFunctionDirectory() / (name + L".blk")))
+    {
+        MessageBoxW(owner, L"同じ名前の関数がすでにあります。別の名前を入力してください。",
+            L"名前が重複しています", MB_OK | MB_ICONWARNING);
+        return false;
+    }
+
+    UserDefinedFunction function;
+    function.name = name;
+    if (!SaveUserFunction(function))
+    {
+        MessageBoxW(owner, L"新しい関数を保存できませんでした。", L"エラー", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    g_userFunctions.push_back(function);
+    std::sort(g_userFunctions.begin(), g_userFunctions.end(),
+        [](const UserDefinedFunction& a, const UserDefinedFunction& b) { return a.name < b.name; });
+
+    return OpenUserFunctionEditor(name);
+}
+
+void ShowFunctionList()
+{
+    if (g_isEditingFunction && !SaveCurrentFunction())
+        return;
+
+    g_isEditingFunction = false;
+    g_currentFunctionName.clear();
+    g_activeSidebarTab = 1;
+    CloseBlockPalette();
+    for (int i = 0; i < CATEGORY_COUNT; ++i)
+        if (g_categoryButtons[i]) ShowWindow(g_categoryButtons[i], SW_HIDE);
+
+    ReloadUserFunctions();
+    RefreshFunctionList();
+    if (g_createdFuncList) ShowWindow(g_createdFuncList, SW_SHOW);
+    SetFunctionHelp(L"「＋ 新しい関数を作る」をクリックすると作成できます。\n作成した関数をダブルクリックすると編集できます。\n関数はメイン画面の「関数」カテゴリから呼び出せます。", true);
+    UpdateView();
+    UpdateButtonColors();
+    InvalidateEditor();
+}
 
 // ============================================================
 // 座標変換を更新
@@ -246,7 +605,7 @@ void UpdateView()
         (std::min)(g_zoom, MAX_ZOOM)
         );
 
-    g_manager.SetViewTransform(
+    ActiveManager().SetViewTransform(
         g_zoom,
         g_viewX,
         g_viewY
@@ -413,19 +772,31 @@ void InitializeBlockList(HWND list)
         0
     );
 
-    g_visibleBlockTypes =
-        GetBlockTypes(g_selectedCategory);
+    g_visibleBlockTypes = GetBlockTypes(g_selectedCategory);
+    g_visibleFunctionNames.assign(g_visibleBlockTypes.size(), L"");
 
     for (BlockType type : g_visibleBlockTypes)
     {
         std::wstring name = GetBlockName(type);
+        SendMessageW(list, LB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(name.c_str()));
+    }
 
-        SendMessageW(
-            list,
-            LB_ADDSTRING,
-            0,
-            reinterpret_cast<LPARAM>(name.c_str())
-        );
+    // 「関数」カテゴリの末尾に、ユーザーが作った関数を呼び出す項目を追加。
+    if (g_selectedCategory == BlockCategory::Function)
+    {
+        for (const auto& function : g_userFunctions)
+        {
+            // 編集中の関数自身は一覧に出さず、間違った自己呼び出しを防ぐ。
+            if (g_isEditingFunction && function.name == g_currentFunctionName)
+                continue;
+
+            g_visibleBlockTypes.push_back(BlockType::DoNothing);
+            g_visibleFunctionNames.push_back(function.name);
+            const std::wstring callLabel = L"自作関数： " + function.name;
+            SendMessageW(list, LB_ADDSTRING, 0,
+                reinterpret_cast<LPARAM>(callLabel.c_str()));
+        }
     }
 
     SendMessageW(
@@ -644,7 +1015,7 @@ void SelectCategory(BlockCategory category)
     if (g_deleteMode)
     {
         g_deleteMode = false;
-        g_manager.SetDeleteMode(false);
+        ActiveManager().SetDeleteMode(false);
     }
 
     UpdateButtonColors();
@@ -809,8 +1180,10 @@ LRESULT CALLBACK BlockListProc(
             index < static_cast<LRESULT>(
                 g_visibleBlockTypes.size()))
         {
-            g_dragBlockType =
-                g_visibleBlockTypes[static_cast<size_t>(index)];
+            g_dragBlockType = g_visibleBlockTypes[static_cast<size_t>(index)];
+            g_dragBlockFunctionName.clear();
+            if (index < static_cast<LRESULT>(g_visibleFunctionNames.size()))
+                g_dragBlockFunctionName = g_visibleFunctionNames[static_cast<size_t>(index)];
 
             g_draggingFromList = true;
 
@@ -1119,6 +1492,11 @@ void DrawBlockListItem(const DRAWITEMSTRUCT* dis)
     SetTextColor(hdc, RGB(255, 255, 255));
 
     std::wstring name = GetBlockName(type);
+    if (index >= 0 && index < static_cast<int>(g_visibleFunctionNames.size()) &&
+        !g_visibleFunctionNames[static_cast<size_t>(index)].empty())
+    {
+        name = L"自作関数： " + g_visibleFunctionNames[static_cast<size_t>(index)];
+    }
     rc.left += 8;
 
     DrawTextW(
@@ -1143,6 +1521,13 @@ void FinishNumericEdit(HWND hwnd, bool commit);
 bool SaveProject(HWND hwnd)
 {
     if (g_numericEdit) FinishNumericEdit(hwnd, true);
+    if (g_isEditingFunction)
+    {
+        const bool saved = SaveCurrentFunction();
+        if (saved)
+            MessageBoxW(hwnd, L"関数を保存しました。", L"保存完了", MB_OK | MB_ICONINFORMATION);
+        return saved;
+    }
     wchar_t path[MAX_PATH] = L"";
 
     OPENFILENAMEW ofn{};
@@ -1164,11 +1549,14 @@ bool SaveProject(HWND hwnd)
     if (!GetSaveFileNameW(&ofn))
         return false;
 
-    return BlockFileManager::SaveToFile(
+    if (!BlockFileManager::SaveToFile(
         path,
-        g_manager.GetBlocks(),
-        g_manager.GetParents()
-    );
+        ActiveManager().GetBlocks(),
+        ActiveManager().GetParents()))
+        return false;
+
+    return SaveFunctionCallMetadata(path, ActiveManager().GetBlocks()) &&
+        SaveRepeatBodyMetadata(path, ActiveManager().GetRepeatBodies());
 }
 
 // ============================================================
@@ -1178,6 +1566,12 @@ bool SaveProject(HWND hwnd)
 bool LoadProject(HWND hwnd)
 {
     if (g_numericEdit) FinishNumericEdit(hwnd, true);
+    if (g_isEditingFunction)
+    {
+        MessageBoxW(hwnd, L"メインの「メイン」タブへ戻ってからプロジェクトを開いてください。関数の中身を誤って置き換えないための案内です。",
+            L"プロジェクトを開く", MB_OK | MB_ICONINFORMATION);
+        return false;
+    }
     wchar_t path[MAX_PATH] = L"";
 
     OPENFILENAMEW ofn{};
@@ -1210,9 +1604,14 @@ bool LoadProject(HWND hwnd)
         return false;
     }
 
-    if (!g_manager.ReplaceBlocks(
+    LoadFunctionCallMetadata(path, loadedBlocks);
+    std::vector<int> loadedRepeatBodies;
+    LoadRepeatBodyMetadata(path, loadedBlocks.size(), loadedRepeatBodies);
+
+    if (!ActiveManager().ReplaceBlocks(
         loadedBlocks,
-        loadedParents))
+        loadedParents,
+        loadedRepeatBodies))
     {
         return false;
     }
@@ -1344,7 +1743,7 @@ void FinishNumericEdit(HWND hwnd, bool commit)
         wchar_t buffer[64]{};
         GetWindowTextW(g_numericEdit, buffer, 63);
         wchar_t* end = nullptr;
-        const auto& blocks = g_manager.GetBlocks();
+        const auto& blocks = ActiveManager().GetBlocks();
         if (g_numericEditBlockIndex < static_cast<int>(blocks.size()))
         {
             Block updated = blocks[g_numericEditBlockIndex];
@@ -1412,7 +1811,7 @@ void FinishNumericEdit(HWND hwnd, bool commit)
             }
 
 
-            g_manager.UpdateBlockAt(g_numericEditBlockIndex, updated);
+            ActiveManager().UpdateBlockAt(g_numericEditBlockIndex, updated);
         }
     }
 
@@ -1446,7 +1845,7 @@ bool IsColorEditArea(const Block& block, POINT worldPoint)
 }
 bool TryStartColorEdit(HWND hwnd, POINT worldPoint)
 {
-    const auto& blocks = g_manager.GetBlocks();
+    const auto& blocks = ActiveManager().GetBlocks();
 
     // 手前のブロックから判定する
     for (int i = static_cast<int>(blocks.size()) - 1;
@@ -1529,7 +1928,7 @@ bool TryStartColorEdit(HWND hwnd, POINT worldPoint)
                 break;
             }
 
-            g_manager.UpdateBlockAt(i, updated);
+            ActiveManager().UpdateBlockAt(i, updated);
             InvalidateEditor();
         }
 
@@ -1541,7 +1940,7 @@ bool TryStartColorEdit(HWND hwnd, POINT worldPoint)
 
 bool TryStartNumericEdit(HWND hwnd, POINT screenPoint, POINT worldPoint)
 {
-    const auto& blocks = g_manager.GetBlocks();
+    const auto& blocks = ActiveManager().GetBlocks();
     for (int i = static_cast<int>(blocks.size()) - 1; i >= 0; --i)
     {
         const Block& block = blocks[static_cast<size_t>(i)];
@@ -2026,11 +2425,14 @@ LRESULT CALLBACK WndProc(
         g_mainWindow = hwnd;
 
         g_manager.Initialize();
+        // 関数専用の管理役は初期ブロックを作らず、空の状態から始める。
+        g_functionManager.ReplaceBlocks({}, {});
+        ReloadUserFunctions();
         UpdateView();
 
-    // ==========================================
-    // 左サイドバー上部に「メイン」「関数」タブを作成
-    // ==========================================
+        // ==========================================
+        // 左サイドバー上部に「メイン」「関数」タブを作成
+        // ==========================================
         g_tabMainBtn = CreateWindowW(
             L"BUTTON", L"メイン",
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
@@ -2058,6 +2460,17 @@ LRESULT CALLBACK WndProc(
             GetModuleHandleW(nullptr), nullptr
         );
         ShowWindow(g_createdFuncList, SW_HIDE);
+
+        g_functionHelpLabel = CreateWindowW(
+            L"STATIC",
+            L"左のカテゴリからブロックを選び、一覧からキャンバスへドラッグして組み立てます。",
+            WS_CHILD | SS_LEFT,
+            12, 602, 205, 62,
+            hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        ShowWindow(g_functionHelpLabel, SW_SHOW);
+
+        // 関数を保存したファイルを一覧に読み込む
+        ReloadUserFunctions();
 
         // 左側のカテゴリボタン
         CreateCategoryButtons(hwnd);
@@ -2135,7 +2548,7 @@ LRESULT CALLBACK WndProc(
             HDC hdc = dis->hDC;
             RECT rc = dis->rcItem;
             bool isMain = (id == ID_TAB_MAIN);
-            bool selected = (isMain && g_activeSidebarTab == 0) || (!isMain && g_activeSidebarTab == 1);
+            bool selected = (isMain && g_activeSidebarTab == 0) || (!isMain && g_activeSidebarTab != 0);
 
             COLORREF bgCol = selected ? RGB(59, 130, 246) : RGB(229, 231, 235); // 選択時は青、非選択時はグレー
             COLORREF fgCol = selected ? RGB(255, 255, 255) : RGB(75, 85, 99);
@@ -2242,7 +2655,7 @@ LRESULT CALLBACK WndProc(
         // Deleteキー
         if (wParam == VK_DELETE)
         {
-            if (g_manager.DeleteSelectedBlock())
+            if (ActiveManager().DeleteSelectedBlock())
                 InvalidateEditor();
 
             return 0;
@@ -2256,7 +2669,7 @@ LRESULT CALLBACK WndProc(
             switch (wParam)
             {
             case 'A':
-                g_manager.SelectAllBlocks();
+                ActiveManager().SelectAllBlocks();
                 InvalidateEditor();
                 return 0;
 
@@ -2270,23 +2683,23 @@ LRESULT CALLBACK WndProc(
                 return 0;
 
             case 'Z':
-                if (g_manager.Undo())
+                if (ActiveManager().Undo())
                     InvalidateEditor();
                 return 0;
 
             case 'Y':
-                if (g_manager.Redo())
+                if (ActiveManager().Redo())
                     InvalidateEditor();
                 return 0;
 
             case 'C':
-                g_manager.CopySelectedBlock();
+                ActiveManager().CopySelectedBlock();
                 return 0;
 
             case 'V':
             {
-                const auto& blocks = g_manager.GetBlocks();
-                int index = g_manager.GetSelectedBlockIndex();
+                const auto& blocks = ActiveManager().GetBlocks();
+                int index = ActiveManager().GetSelectedBlockIndex();
 
                 if (index >= 0 &&
                     index < static_cast<int>(blocks.size()))
@@ -2294,7 +2707,7 @@ LRESULT CALLBACK WndProc(
                     int x = blocks[index].x + 30;
                     int y = blocks[index].y + 30;
 
-                    if (g_manager.PasteCopiedBlock(x, y))
+                    if (ActiveManager().PasteCopiedBlock(x, y))
                         InvalidateEditor();
                 }
 
@@ -2320,17 +2733,21 @@ LRESULT CALLBACK WndProc(
         // ==========================================
         if (id == ID_TAB_MAIN && notification == BN_CLICKED)
         {
+            if (g_isEditingFunction && !SaveCurrentFunction())
+                return 0;
+
+            g_isEditingFunction = false;
+            g_currentFunctionName.clear();
             g_activeSidebarTab = 0;
+            CloseBlockPalette();
 
-            // カテゴリボタン群を表示
             for (int i = 0; i < CATEGORY_COUNT; ++i)
-            {
                 if (g_categoryButtons[i]) ShowWindow(g_categoryButtons[i], SW_SHOW);
-            }
-
-            // 作成した関数リストを非表示
             if (g_createdFuncList) ShowWindow(g_createdFuncList, SW_HIDE);
+            SetFunctionHelp(L"左のカテゴリからブロックを選び、一覧からキャンバスへドラッグして組み立てます。", true);
 
+            UpdateView();
+            UpdateButtonColors();
             InvalidateEditor();
             return 0;
         }
@@ -2340,29 +2757,28 @@ LRESULT CALLBACK WndProc(
         // ==========================================
         if (id == ID_TAB_FUNCTION && notification == BN_CLICKED)
         {
-            g_activeSidebarTab = 1;
+            // 関数タブは「関数一覧へ戻る」ボタンとしても働く。
+            ShowFunctionList();
+            return 0;
+        }
 
-            // カテゴリボタン群をすべて非表示にする
-            for (int i = 0; i < CATEGORY_COUNT; ++i)
+        // 関数一覧：先頭をクリックすると新規作成、既存項目はダブルクリックで編集。
+        if (id == ID_CREATED_FUNC_LIST)
+        {
+            const LRESULT selectedIndex = SendMessageW(g_createdFuncList, LB_GETCURSEL, 0, 0);
+            if (notification == LBN_SELCHANGE && selectedIndex == 0)
             {
-                if (g_categoryButtons[i]) ShowWindow(g_categoryButtons[i], SW_HIDE);
+                if (!CreateUserFunction(hwnd) && g_createdFuncList)
+                    SendMessageW(g_createdFuncList, LB_SETCURSEL, static_cast<WPARAM>(-1), 0);
+                return 0;
             }
-            // 開いていたブロック一覧も閉じる
-            if (g_blockList) ShowWindow(g_blockList, SW_HIDE);
-            g_showBlockList = false;
-
-            // 作成した関数の一覧を表示する
-            if (g_createdFuncList)
+            if (notification == LBN_DBLCLK && selectedIndex > 0 &&
+                selectedIndex <= static_cast<LRESULT>(g_userFunctions.size()))
             {
-                // ここでユーザーが作成した関数データをリストに再読み込みできます
-                SendMessageW(g_createdFuncList, LB_RESETCONTENT, 0, 0);
-                SendMessageW(g_createdFuncList, LB_ADDSTRING, 0, (LPARAM)L"+ 新規関数を作成...");
-                // 例として保存されている自作関数を追加していく処理をここに記述
-
-                ShowWindow(g_createdFuncList, SW_SHOW);
+                const std::wstring name = g_userFunctions[static_cast<size_t>(selectedIndex - 1)].name;
+                OpenUserFunctionEditor(name);
+                return 0;
             }
-
-            InvalidateEditor();
             return 0;
         }
 
@@ -2490,7 +2906,7 @@ LRESULT CALLBACK WndProc(
         case ID_TOOL_UNDO:
             if (notification == BN_CLICKED)
             {
-                if (g_manager.Undo())
+                if (ActiveManager().Undo())
                     InvalidateEditor();
             }
             return 0;
@@ -2499,7 +2915,7 @@ LRESULT CALLBACK WndProc(
         case ID_TOOL_REDO:
             if (notification == BN_CLICKED)
             {
-                if (g_manager.Redo())
+                if (ActiveManager().Redo())
                     InvalidateEditor();
             }
             return 0;
@@ -2508,6 +2924,12 @@ LRESULT CALLBACK WndProc(
         case ID_TOOL_RUN:
             if (notification == BN_CLICKED)
             {
+                if (g_isEditingFunction)
+                {
+                    MessageBoxW(hwnd, L"ロボットとして実行するには、先に「メイン」タブへ戻ってください。",
+                        L"実行", MB_OK | MB_ICONINFORMATION);
+                    return 0;
+                }
                 const auto& blocks = g_manager.GetBlocks();
                 if (blocks.empty())
                 {
@@ -2529,7 +2951,7 @@ LRESULT CALLBACK WndProc(
                 }
 
                 // Javaファイル生成・コンパイル・Robocode起動をまとめた関数を呼び出す
-                if (ExportJavaCustom(blocks, folderPath, robotName))
+                if (ExportJavaCustom(blocks, folderPath, robotName, g_userFunctions))
                 {
                     // 成功時の処理（必要であれば）
                 }
@@ -2548,12 +2970,12 @@ LRESULT CALLBACK WndProc(
                 );
             }
             return 0;
-         // ====================================================
-         // キーボードショートカット
-         // ====================================================
+            // ====================================================
+            // キーボードショートカット
+            // ====================================================
 
         case ID_SHORTCUT_SELECT_ALL:
-            g_manager.SelectAllBlocks();
+            ActiveManager().SelectAllBlocks();
             InvalidateEditor();
             return 0;
 
@@ -2567,23 +2989,23 @@ LRESULT CALLBACK WndProc(
             return 0;
 
         case ID_SHORTCUT_UNDO:
-            if (g_manager.Undo())
+            if (ActiveManager().Undo())
                 InvalidateEditor();
             return 0;
 
         case ID_SHORTCUT_REDO:
-            if (g_manager.Redo())
+            if (ActiveManager().Redo())
                 InvalidateEditor();
             return 0;
 
         case ID_SHORTCUT_COPY:
-            g_manager.CopySelectedBlock();
+            ActiveManager().CopySelectedBlock();
             return 0;
 
         case ID_SHORTCUT_PASTE:
         {
-            const auto& blocks = g_manager.GetBlocks();
-            int index = g_manager.GetSelectedBlockIndex();
+            const auto& blocks = ActiveManager().GetBlocks();
+            int index = ActiveManager().GetSelectedBlockIndex();
 
             if (index >= 0 &&
                 index < static_cast<int>(blocks.size()))
@@ -2591,7 +3013,7 @@ LRESULT CALLBACK WndProc(
                 int x = blocks[index].x + 30;
                 int y = blocks[index].y + 30;
 
-                if (g_manager.PasteCopiedBlock(x, y))
+                if (ActiveManager().PasteCopiedBlock(x, y))
                     InvalidateEditor();
             }
 
@@ -2600,7 +3022,7 @@ LRESULT CALLBACK WndProc(
 
 
         case ID_SHORTCUT_DELETE:
-            if (g_manager.DeleteSelectedBlock())
+            if (ActiveManager().DeleteSelectedBlock())
                 InvalidateEditor();
             return 0;
         case ID_ADD:
@@ -2612,7 +3034,7 @@ LRESULT CALLBACK WndProc(
                 };
 
                 POINT world =
-                    g_manager.ScreenToWorld(
+                    ActiveManager().ScreenToWorld(
                         center.x,
                         center.y
                     );
@@ -2634,7 +3056,7 @@ LRESULT CALLBACK WndProc(
                         index < static_cast<int>(
                             g_visibleBlockTypes.size()))
                     {
-                        g_manager.AddBlock(
+                        ActiveManager().AddBlock(
                             GetBlockTypeFromIndex(index),
                             world.x,
                             world.y
@@ -2651,7 +3073,7 @@ LRESULT CALLBACK WndProc(
             {
                 g_deleteMode = !g_deleteMode;
 
-                g_manager.SetDeleteMode(g_deleteMode);
+                ActiveManager().SetDeleteMode(g_deleteMode);
 
                 UpdateButtonColors();
                 InvalidateEditor();
@@ -2713,7 +3135,7 @@ LRESULT CALLBACK WndProc(
         case ID_UNDO:
             if (notification == BN_CLICKED)
             {
-                if (g_manager.Undo())
+                if (ActiveManager().Undo())
                     InvalidateEditor();
             }
             return 0;
@@ -2721,7 +3143,7 @@ LRESULT CALLBACK WndProc(
         case ID_REDO:
             if (notification == BN_CLICKED)
             {
-                if (g_manager.Redo())
+                if (ActiveManager().Redo())
                     InvalidateEditor();
             }
             return 0;
@@ -2840,20 +3262,20 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
-        g_manager.OnMouseMove(p.x, p.y);
+        ActiveManager().OnMouseMove(p.x, p.y);
 
         // 左ボタンを押している間
         if (wParam & MK_LBUTTON)
         {
-            if (g_manager.IsSelectingRange())
+            if (ActiveManager().IsSelectingRange())
             {
                 // 範囲選択はワールド座標で更新
-                POINT world = g_manager.ScreenToWorld(
+                POINT world = ActiveManager().ScreenToWorld(
                     p.x,
                     p.y
                 );
 
-                g_manager.UpdateRangeSelection(
+                ActiveManager().UpdateRangeSelection(
                     world.x,
                     world.y
                 );
@@ -2861,13 +3283,13 @@ LRESULT CALLBACK WndProc(
             else
             {
                 // 通常のブロック移動
-                g_manager.OnMouseMove(p.x, p.y);
+                ActiveManager().OnMouseMove(p.x, p.y);
             }
         }
         else
         {
             // クリックしていなくてもカーソル位置を更新
-            g_manager.OnMouseMove(p.x, p.y);
+            ActiveManager().OnMouseMove(p.x, p.y);
         }
 
         // カーソルが動くたびに再描画
@@ -2911,6 +3333,12 @@ LRESULT CALLBACK WndProc(
         if (p.x >= 10 && p.x <= 140 &&
             p.y >= 10 && p.y <= 48)
         {
+            if (g_isEditingFunction)
+            {
+                MessageBoxW(hwnd, L"ロボットとして出力するには、先に「メイン」タブへ戻ってください。",
+                    L"Java出力", MB_OK | MB_ICONINFORMATION);
+                return 0;
+            }
             const auto& blocks = g_manager.GetBlocks();
             if (blocks.empty())
             {
@@ -2932,14 +3360,14 @@ LRESULT CALLBACK WndProc(
             }
 
             // 3つの引数を渡して実行
-            ExportJavaCustom(blocks, folderPath, robotName);
+            ExportJavaCustom(blocks, folderPath, robotName, g_userFunctions);
             return 0;
         }
 
         if (!IsCanvasPoint(p))
             return 0;
 
-        POINT world = g_manager.ScreenToWorld(p.x, p.y);
+        POINT world = ActiveManager().ScreenToWorld(p.x, p.y);
 
         // 色変更ブロックをクリックした可能性を記録する
         // ========================================================
@@ -2948,7 +3376,7 @@ LRESULT CALLBACK WndProc(
 
         g_colorClickCandidate = false;
 
-        const auto& colorBlocks = g_manager.GetBlocks();
+        const auto& colorBlocks = ActiveManager().GetBlocks();
 
         if ((GetKeyState(VK_CONTROL) & 0x8000) == 0)
         {
@@ -3004,7 +3432,7 @@ LRESULT CALLBACK WndProc(
         if (g_numericEdit)
             FinishNumericEdit(hwnd, true);
 
-        const auto& blocks = g_manager.GetBlocks();
+        const auto& blocks = ActiveManager().GetBlocks();
         bool hitBlock = false;
 
         // 手前のブロックから判定する
@@ -3028,7 +3456,7 @@ LRESULT CALLBACK WndProc(
         {
             if (hitBlock)
             {
-                g_manager.DeleteBlockAt(world.x, world.y);
+                ActiveManager().DeleteBlockAt(world.x, world.y);
                 InvalidateEditor();
             }
 
@@ -3038,7 +3466,7 @@ LRESULT CALLBACK WndProc(
         // 空白からドラッグしたら範囲選択
         if (!hitBlock)
         {
-            g_manager.StartRangeSelection(world.x, world.y);
+            ActiveManager().StartRangeSelection(world.x, world.y);
 
             SetCapture(hwnd);
             InvalidateEditor();
@@ -3055,7 +3483,7 @@ LRESULT CALLBACK WndProc(
         }
 
         // ブロックをクリックしたら通常の選択・移動
-        g_manager.OnMouseDown(hwnd, p.x, p.y);
+        ActiveManager().OnMouseDown(hwnd, p.x, p.y);
 
         SetCapture(hwnd);
         InvalidateEditor();
@@ -3093,7 +3521,7 @@ LRESULT CALLBACK WndProc(
             // ほとんど移動していない場合だけクリックとみなす
             if (dx <= 4 && dy <= 4)
             {
-                POINT world = g_manager.ScreenToWorld(
+                POINT world = ActiveManager().ScreenToWorld(
                     p.x, p.y
                 );
 
@@ -3121,19 +3549,23 @@ LRESULT CALLBACK WndProc(
             if (IsCanvasPoint(p))
             {
                 // キャンバス座標をブロックのワールド座標に変換
-                POINT world = g_manager.ScreenToWorld(
+                POINT world = ActiveManager().ScreenToWorld(
                     p.x,
                     p.y
                 );
 
-                // ドロップ位置にブロックを追加
-                g_manager.AddBlock(
-                    g_dragBlockType,
-                    world.x,
-                    world.y
-                );
+                // ドロップ位置にブロックを追加。
+                // 自作関数の場合は、関数名も一緒に保存する。
+                Block newBlock{};
+                newBlock.type = g_dragBlockType;
+                newBlock.x = world.x;
+                newBlock.y = world.y;
+                if (!g_dragBlockFunctionName.empty())
+                    SetUserFunctionCallName(newBlock, g_dragBlockFunctionName);
+                ActiveManager().AddBlock(newBlock);
             }
 
+            g_dragBlockFunctionName.clear();
             if (GetCapture() == hwnd)
                 ReleaseCapture();
 
@@ -3142,25 +3574,25 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
-        if (g_manager.IsSelectingRange())
+        if (ActiveManager().IsSelectingRange())
         {
             POINT p = {
                 GET_X_LPARAM(lParam),
                 GET_Y_LPARAM(lParam)
             };
 
-            POINT world = g_manager.ScreenToWorld(
+            POINT world = ActiveManager().ScreenToWorld(
                 p.x,
                 p.y
             );
 
             // 最終位置を反映
-            g_manager.UpdateRangeSelection(
+            ActiveManager().UpdateRangeSelection(
                 world.x,
                 world.y
             );
 
-            g_manager.EndRangeSelection();
+            ActiveManager().EndRangeSelection();
         }
         else
         {
@@ -3170,15 +3602,15 @@ LRESULT CALLBACK WndProc(
             };
 
             // マウスを離す前にドラッグ対象の番号を取得
-            int draggedIndex = g_manager.GetDraggedBlockIndex();
+            int draggedIndex = ActiveManager().GetDraggedBlockIndex();
 
             // ドラッグ操作を終了
-            g_manager.OnMouseUp(hwnd);
+            ActiveManager().OnMouseUp(hwnd);
 
             // 黒い部分で離した場合、ブロックと子ブロックを削除
             if (IsBlackArea(p) && draggedIndex >= 0)
             {
-                g_manager.DeleteBlockAndChildren(draggedIndex);
+                ActiveManager().DeleteBlockAndChildren(draggedIndex);
             }
         }
 
@@ -3198,6 +3630,7 @@ LRESULT CALLBACK WndProc(
     {
         g_panning = false;
         g_draggingFromList = false;
+        g_dragBlockFunctionName.clear();
         g_isResizingList = false;
 
         return 0;
@@ -3247,12 +3680,25 @@ LRESULT CALLBACK WndProc(
         DrawCanvasGrid(memDC, canvasRect);
 
         // ③ 既存のブロックと選択枠を描画
-        g_manager.DrawAll(memDC);
+        ActiveManager().DrawAll(memDC);
+
+        // 関数編集画面であることと、基本操作をキャンバス上にも表示。
+        if (g_isEditingFunction)
+        {
+            RECT functionTitleRect{ g_canvasLeft + 18, 54, (std::min)(static_cast<int>(rc.right) - 24, g_canvasLeft + 620), 78 };
+            DrawLabel(memDC, (L"編集中の関数： " + g_currentFunctionName).c_str(),
+                functionTitleRect, RGB(45, 55, 72), 16, true);
+            RECT functionGuideRect{ g_canvasLeft + 18, 78, (std::min)(static_cast<int>(rc.right) - 24, g_canvasLeft + 930), 100 };
+            DrawLabel(memDC, L"左のカテゴリからドラッグして追加 / 数字をクリックして変更 / Deleteで削除 / Ctrl+Zで元に戻す / 上の「関数」で一覧へ",
+                functionGuideRect, RGB(72, 82, 98), 12, false);
+        }
 
         // ④ ドラッグ中のブロック名を表示
         if (g_draggingFromList)
         {
-            std::wstring name = GetBlockName(g_dragBlockType);
+            std::wstring name = g_dragBlockFunctionName.empty()
+                ? GetBlockName(g_dragBlockType)
+                : L"自作関数： " + g_dragBlockFunctionName;
 
             RECT dragRect = {
                 g_listDragPoint.x + 12,
@@ -3331,7 +3777,9 @@ LRESULT CALLBACK WndProc(
 
     case WM_DESTROY:
     {
-        if (g_numericEdit) FinishNumericEdit(hwnd, false);
+        if (g_numericEdit) FinishNumericEdit(hwnd, true);
+        if (g_isEditingFunction)
+            SaveCurrentFunction();
         if (g_blockList && g_oldListProc)
         {
             SetWindowLongPtrW(
@@ -3481,4 +3929,3 @@ int WINAPI WinMain(
 
     return static_cast<int>(msg.wParam);
 }
-//大半のブロックがリストからドラッグして取ってくると色が変わる

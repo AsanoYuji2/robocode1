@@ -435,45 +435,45 @@ void BlockManager::OnMouseMove(int x, int y)
     if (dx == 0 && dy == 0)
         return;
 
-   
+
     if (!dragStarted)
-{
-    SaveUndoState();
-
-    if (selectedBlocks.empty())
     {
-        // ========================================
-        // Repeat の内側からドラッグして外す場合、
-        // repeatBody の接続情報も解除する
-        // ========================================
-        for (int i = 0;
-            i < static_cast<int>(blocks.size());
-            ++i)
+        SaveUndoState();
+
+        if (selectedBlocks.empty())
         {
-            if (blocks[i].type != BlockType::Repeat)
-                continue;
-
-            if (i >= static_cast<int>(repeatBody.size()))
-                continue;
-
-            // 選択したブロックが内側の先頭なら、
-            // Repeat と選択ブロックの接続を解除
-            if (repeatBody[i] == selected)
+            // ========================================
+            // Repeat の内側からドラッグして外す場合、
+            // repeatBody の接続情報も解除する
+            // ========================================
+            for (int i = 0;
+                i < static_cast<int>(blocks.size());
+                ++i)
             {
-                repeatBody[i] = -1;
+                if (blocks[i].type != BlockType::Repeat)
+                    continue;
+
+                if (i >= static_cast<int>(repeatBody.size()))
+                    continue;
+
+                // 選択したブロックが内側の先頭なら、
+                // Repeat と選択ブロックの接続を解除
+                if (repeatBody[i] == selected)
+                {
+                    repeatBody[i] = -1;
+                }
+            }
+
+            // 選択したブロックの親との接続を解除
+            if (selected >= 0 &&
+                selected < static_cast<int>(parent.size()))
+            {
+                parent[selected] = -1;
             }
         }
 
-        // 選択したブロックの親との接続を解除
-        if (selected >= 0 &&
-            selected < static_cast<int>(parent.size()))
-        {
-            parent[selected] = -1;
-        }
+        dragStarted = true;
     }
-
-    dragStarted = true;
-}
 
 
     for (int index : dragBlocks)
@@ -642,22 +642,22 @@ bool BlockManager::IsDescendant(int blockIndex, int ancestorIndex) const {
 
 }
 
-bool BlockManager::HasChild(int blockIndex) const 
+bool BlockManager::HasChild(int blockIndex) const
 {
-   
+
     // 外側の接続だけを調べる。
         // Repeat の内側は repeatBody で別管理する。
-        for (int p : parent)
-        {
-            if (p == blockIndex)
-                return true;
-        }
+    for (int p : parent)
+    {
+        if (p == blockIndex)
+            return true;
+    }
 
     return false;
 
 }
 
-int BlockManager::GetChild(int blockIndex) const 
+int BlockManager::GetChild(int blockIndex) const
 {
     // 外側・通常の接続を取得する
     for (int i = 0; i < static_cast<int>(parent.size()); ++i)
@@ -1016,10 +1016,8 @@ int BlockManager::GetSelectedBlock() const { return selected; }
 
 // ============================================================ // ブロック追加 // ============================================================
 
-void BlockManager::AddBlock(BlockType type, int x, int y) {
-    SaveUndoState();
-
-    
+void BlockManager::AddBlock(BlockType type, int x, int y)
+{
     Block block{};
     block.type = type;
     block.x = x;
@@ -1027,14 +1025,25 @@ void BlockManager::AddBlock(BlockType type, int x, int y) {
 
     // Repeatだけ高さを確保する
     if (type == BlockType::Repeat)
-    {
         block.h = 120;
-    }
+
+    AddBlock(block);
+}
+
+// 設定値を含むブロックを追加する。
+// 追加前の状態を1回だけUndo履歴へ保存するため、
+// 関数呼び出しブロックなども1回の操作で取り消せる。
+void BlockManager::AddBlock(const Block& source)
+{
+    SaveUndoState();
+
+    Block block = source;
+    if (block.type == BlockType::Repeat && block.h < 120)
+        block.h = 120;
 
     blocks.push_back(block);
     parent.push_back(-1);
     repeatBody.push_back(-1);
-
 }
 
 // ============================================================ 
@@ -1122,60 +1131,73 @@ bool BlockManager::DeleteBlockAndChildren(int index)
 // ブロックの置き換え
 // ============================================================
 
-bool BlockManager::ReplaceBlocks(const std::vector<Block>& newBlocks, const std::vector<int>& newParents) {
-    if (newBlocks.size() != newParents.size()) return false;
+bool BlockManager::ReplaceBlocks(
+    const std::vector<Block>& newBlocks,
+    const std::vector<int>& newParents)
+{
+    // 旧形式の呼び出しでは、Repeat内側の接続は未接続として扱う。
+    return ReplaceBlocks(
+        newBlocks,
+        newParents,
+        std::vector<int>(newBlocks.size(), -1));
+}
+
+bool BlockManager::ReplaceBlocks(
+    const std::vector<Block>& newBlocks,
+    const std::vector<int>& newParents,
+    const std::vector<int>& newRepeatBodies)
+{
+    if (newBlocks.size() != newParents.size() ||
+        newBlocks.size() != newRepeatBodies.size())
+        return false;
 
     const int count = static_cast<int>(newBlocks.size());
-
     std::vector<bool> hasChild(count, false);
 
     for (int i = 0; i < count; ++i)
     {
-        int p = newParents[i];
-
+        const int p = newParents[static_cast<size_t>(i)];
         if (p < -1 || p >= count || p == i)
             return false;
 
         if (p != -1)
         {
-            if (hasChild[p])
+            if (hasChild[static_cast<size_t>(p)])
                 return false;
-
-            hasChild[p] = true;
+            hasChild[static_cast<size_t>(p)] = true;
         }
+
+        const int body = newRepeatBodies[static_cast<size_t>(i)];
+        if (body < -1 || body >= count || body == i)
+            return false;
+        if (body != -1 && newBlocks[static_cast<size_t>(i)].type != BlockType::Repeat)
+            return false;
     }
 
+    // 親子のつながりに循環がないか確認する。
     for (int i = 0; i < count; ++i)
     {
         int current = i;
-
-        for (int steps = 0;
-            current != -1;
-            ++steps)
+        for (int steps = 0; current != -1; ++steps)
         {
             if (steps >= count)
                 return false;
-
-            current = newParents[current];
+            current = newParents[static_cast<size_t>(current)];
         }
     }
 
     blocks = newBlocks;
     parent = newParents;
+    repeatBody = newRepeatBodies;
 
     undoStack.clear();
     redoStack.clear();
-
     selected = -1;
     selectedBlocks.clear();
-
     dragging = false;
     dragStarted = false;
     selectingRange = false;
-
     return true;
-
-
 }
 
 // ============================================================ 

@@ -137,6 +137,8 @@
     <ClInclude Include="JavaGenerator.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="UserFunction.h" />
+    <ClInclude Include="UserFunctionStorage.h" />
     <ClInclude Include="WindowsProject1.h" />
   </ItemGroup>
   <ItemGroup>
@@ -145,6 +147,7 @@
     <ClCompile Include="BlockManager.cpp" />
     <ClCompile Include="JavaGenerator.cpp" />
     <ClCompile Include="Main.cpp" />
+    <ClCompile Include="UserFunctionStorage.cpp" />
     <ClCompile Include="WindowsProject1.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
