@@ -43,6 +43,10 @@ HWND g_undoButton = nullptr;
 HWND g_redoButton = nullptr;
 HWND g_editRobotName = nullptr;
 HWND g_editFolderPath = nullptr;
+int g_activeSidebarTab = 0; // 0: メイン, 1: 関数
+HWND g_tabMainBtn = nullptr;
+HWND g_tabFuncBtn = nullptr;
+HWND g_createdFuncList = nullptr; // 作成した関数を表示するリストボックス
 int g_numericEditBlockIndex = -1;
 int g_numericEditField = 0; // 1=distance, 2=repeatCount, 3=waitSeconds, 4=conditionValue, 5=value
 WNDPROC g_oldNumericEditProc = nullptr;
@@ -66,6 +70,9 @@ bool g_deleteMode = false;
 bool g_showBlockList = false;
 bool g_draggingFromList = false;
 bool g_panning = false;
+bool g_isResizingList = false;
+
+int g_listWidth = 220;
 
 BlockType g_dragBlockType = BlockType::Move;
 
@@ -137,6 +144,10 @@ constexpr int ID_TOOL_JAVA = 2107;
 constexpr int ID_EDIT_ROBOT_NAME = 2201;
 constexpr int ID_EDIT_FOLDER_PATH = 2202;
 constexpr int ID_BTN_BROWSE = 2203;
+// 画面上部に配置するためのコントロールID等の追加
+constexpr int ID_TAB_MAIN = 2301;
+constexpr int ID_TAB_FUNCTION = 2302;
+constexpr int ID_CREATED_FUNC_LIST = 2303;
 
 // アクセラレータテーブル
 HACCEL g_hAccel = nullptr;
@@ -594,11 +605,12 @@ void SelectCategory(BlockCategory category)
     // 選択したカテゴリのブロックを一覧に表示
     InitializeBlockList(g_blockList);
 
+
     // 常に一番上のカテゴリボタン（移動＝index 0）の位置を基準にしてリストを配置する
     if (g_categoryButtons[0] && g_blockList)
     {
         RECT btnRc{};
-        GetWindowRect(g_categoryButtons[0], &btnRc);
+        GetWindowRect(g_tabFuncBtn, &btnRc);
 
         // スクリーン座標をメインウィンドウ（クライアント座標）に変換
         POINT ptTopLeft = { btnRc.right + 5, btnRc.top };
@@ -611,7 +623,7 @@ void SelectCategory(BlockCategory category)
             ptTopLeft.x,
             ptTopLeft.y,
             220, // 幅
-            220, // 高さ
+            475, // 高さ
             SWP_SHOWWINDOW
         );
 
@@ -711,6 +723,22 @@ LRESULT CALLBACK BlockListProc(
             GET_X_LPARAM(lp),
             GET_Y_LPARAM(lp)
         };
+
+        // ★ リストの右端付近をクリックしたらリサイズ開始
+        if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList))
+        {
+            RECT listRc;
+            GetWindowRect(g_blockList, &listRc);
+            ScreenToClient(hwnd, (LPPOINT)&listRc.left);
+            ScreenToClient(hwnd, (LPPOINT)&listRc.right);
+
+            if (abs(p.x - listRc.right) <= 5 && p.y >= listRc.top && p.y <= listRc.bottom)
+            {
+                g_isResizingList = true;
+                SetCapture(hwnd);
+                return 0;
+            }
+        }
 
         LRESULT hit = SendMessageW(
             hwnd,
@@ -870,11 +898,11 @@ LRESULT CALLBACK CategoryButtonProc(
 
 void CreateCategoryButtons(HWND hwnd)
 {
-    constexpr int BUTTON_X = 10;
-    constexpr int BUTTON_Y = 60;
-    constexpr int BUTTON_WIDTH = 125;
-    constexpr int BUTTON_HEIGHT = 42;
-    constexpr int BUTTON_GAP = 8;
+    constexpr int BUTTON_X = 12;
+    constexpr int BUTTON_Y = 95;
+    constexpr int BUTTON_WIDTH = 202;
+    constexpr int BUTTON_HEIGHT = 38;
+    constexpr int BUTTON_GAP = 6;
 
     for (int i = 0; i < CATEGORY_COUNT; ++i)
     {
@@ -1727,29 +1755,29 @@ void DrawCanvasGrid(
 // ============================================================
 // キャンバス内タブ（「メイン」「関数」「設定」）の描画
 // ============================================================
-void DrawCanvasTabs(HDC hdc, int canvasLeft, int top)
-{
-    const wchar_t* tabs[] = { L"メイン", L"関数", L"設定" };
-    int tabWidth = 80;
-    int tabHeight = 32;
-
-    for (int i = 0; i < 3; ++i) {
-        int x = canvasLeft + 15 + (i * (tabWidth + 4));
-        RECT tabRc{ x, top + 10, x + tabWidth, top + 10 + tabHeight };
-
-        bool isSelected = (i == 0); // メインを選択中
-        COLORREF bg = isSelected ? RGB(59, 130, 246) : RGB(229, 231, 235);
-        COLORREF fg = isSelected ? RGB(255, 255, 255) : RGB(75, 85, 99);
-
-        HBRUSH b = CreateSolidBrush(bg);
-        FillRect(hdc, &tabRc, b);
-        DeleteObject(b);
-
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, fg);
-        DrawTextW(hdc, tabs[i], -1, &tabRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    }
-}
+//void DrawCanvasTabs(HDC hdc, int canvasLeft, int top)
+//{
+//    const wchar_t* tabs[] = { L"メイン", L"関数", L"設定" };
+//    int tabWidth = 80;
+//    int tabHeight = 32;
+//
+//    for (int i = 0; i < 3; ++i) {
+//        int x = canvasLeft + 15 + (i * (tabWidth + 4));
+//        RECT tabRc{ x, top + 10, x + tabWidth, top + 10 + tabHeight };
+//
+//        bool isSelected = (i == 0); // メインを選択中
+//        COLORREF bg = isSelected ? RGB(59, 130, 246) : RGB(229, 231, 235);
+//        COLORREF fg = isSelected ? RGB(255, 255, 255) : RGB(75, 85, 99);
+//
+//        HBRUSH b = CreateSolidBrush(bg);
+//        FillRect(hdc, &tabRc, b);
+//        DeleteObject(b);
+//
+//        SetBkMode(hdc, TRANSPARENT);
+//        SetTextColor(hdc, fg);
+//        DrawTextW(hdc, tabs[i], -1, &tabRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+//    }
+//}
 
 // 右側パネル全体（プレビュー、ステータス、ログ）の描画
 void DrawRightPanel(HDC hdc, int panelLeft, int top, int panelRight, int bottom)
@@ -1968,7 +1996,7 @@ void DrawNewLayout(HDC hdc, int width, int height)
     DeleteObject(pen);
 
     // 5. キャンバス内タブ描画
-    DrawCanvasTabs(hdc, canvasLeft, 50);
+    //DrawCanvasTabs(hdc, canvasLeft, 50);
 
     // 6. 右側情報・プレビュー・ログパネル描画
     DrawRightPanel(hdc, canvasRight, 50, width, height);
@@ -1999,6 +2027,37 @@ LRESULT CALLBACK WndProc(
 
         g_manager.Initialize();
         UpdateView();
+
+    // ==========================================
+    // 左サイドバー上部に「メイン」「関数」タブを作成
+    // ==========================================
+        g_tabMainBtn = CreateWindowW(
+            L"BUTTON", L"メイン",
+            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+            12, 55, 100, 30,
+            hwnd, reinterpret_cast<HMENU>(ID_TAB_MAIN),
+            GetModuleHandleW(nullptr), nullptr
+        );
+
+        g_tabFuncBtn = CreateWindowW(
+            L"BUTTON", L"関数",
+            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+            114, 55, 100, 30,
+            hwnd, reinterpret_cast<HMENU>(ID_TAB_FUNCTION),
+            GetModuleHandleW(nullptr), nullptr
+        );
+
+        // ==========================================
+        //作成した関数一覧用のリストボックスを作成（初期は非表示）
+        // ==========================================
+        g_createdFuncList = CreateWindowW(
+            L"LISTBOX", nullptr,
+            WS_CHILD | WS_BORDER | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+            12, 95, 202, 500,
+            hwnd, reinterpret_cast<HMENU>(ID_CREATED_FUNC_LIST),
+            GetModuleHandleW(nullptr), nullptr
+        );
+        ShowWindow(g_createdFuncList, SW_HIDE);
 
         // 左側のカテゴリボタン
         CreateCategoryButtons(hwnd);
@@ -2070,6 +2129,28 @@ LRESULT CALLBACK WndProc(
         if (!dis) return TRUE;
 
         int id = static_cast<int>(dis->CtlID);
+
+        if (id == ID_TAB_MAIN || id == ID_TAB_FUNCTION)
+        {
+            HDC hdc = dis->hDC;
+            RECT rc = dis->rcItem;
+            bool isMain = (id == ID_TAB_MAIN);
+            bool selected = (isMain && g_activeSidebarTab == 0) || (!isMain && g_activeSidebarTab == 1);
+
+            COLORREF bgCol = selected ? RGB(59, 130, 246) : RGB(229, 231, 235); // 選択時は青、非選択時はグレー
+            COLORREF fgCol = selected ? RGB(255, 255, 255) : RGB(75, 85, 99);
+
+            HBRUSH brush = CreateSolidBrush(bgCol);
+            FillRect(hdc, &rc, brush);
+            DeleteObject(brush);
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, fgCol);
+
+            const wchar_t* label = isMain ? L"メイン" : L"関数";
+            DrawTextW(hdc, label, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        }
 
         if (id >= ID_CATEGORY_BASE && id < ID_CATEGORY_BASE + CATEGORY_COUNT)
         {
@@ -2233,6 +2314,57 @@ LRESULT CALLBACK WndProc(
     {
         int id = LOWORD(wParam);
         int notification = HIWORD(wParam);
+
+        // ==========================================
+        // 「メイン」タブが押されたとき
+        // ==========================================
+        if (id == ID_TAB_MAIN && notification == BN_CLICKED)
+        {
+            g_activeSidebarTab = 0;
+
+            // カテゴリボタン群を表示
+            for (int i = 0; i < CATEGORY_COUNT; ++i)
+            {
+                if (g_categoryButtons[i]) ShowWindow(g_categoryButtons[i], SW_SHOW);
+            }
+
+            // 作成した関数リストを非表示
+            if (g_createdFuncList) ShowWindow(g_createdFuncList, SW_HIDE);
+
+            InvalidateEditor();
+            return 0;
+        }
+
+        // ==========================================
+        // 「関数」タブが押されたとき
+        // ==========================================
+        if (id == ID_TAB_FUNCTION && notification == BN_CLICKED)
+        {
+            g_activeSidebarTab = 1;
+
+            // カテゴリボタン群をすべて非表示にする
+            for (int i = 0; i < CATEGORY_COUNT; ++i)
+            {
+                if (g_categoryButtons[i]) ShowWindow(g_categoryButtons[i], SW_HIDE);
+            }
+            // 開いていたブロック一覧も閉じる
+            if (g_blockList) ShowWindow(g_blockList, SW_HIDE);
+            g_showBlockList = false;
+
+            // 作成した関数の一覧を表示する
+            if (g_createdFuncList)
+            {
+                // ここでユーザーが作成した関数データをリストに再読み込みできます
+                SendMessageW(g_createdFuncList, LB_RESETCONTENT, 0, 0);
+                SendMessageW(g_createdFuncList, LB_ADDSTRING, 0, (LPARAM)L"+ 新規関数を作成...");
+                // 例として保存されている自作関数を追加していく処理をここに記述
+
+                ShowWindow(g_createdFuncList, SW_SHOW);
+            }
+
+            InvalidateEditor();
+            return 0;
+        }
 
         // 「参照...」ボタンが押されたとき
         if (id == ID_BTN_BROWSE && notification == BN_CLICKED)
@@ -2764,7 +2896,7 @@ LRESULT CALLBACK WndProc(
                 ShowWindow(g_blockList, SW_HIDE);
                 g_showBlockList = false;
 
-                // ★ リストを閉じたら、キャンバスの位置を元に戻す
+                // リストを閉じたら、キャンバスの位置を元に戻す
                 g_canvasLeft = 230;
 
                 UpdateView();
@@ -2811,8 +2943,8 @@ LRESULT CALLBACK WndProc(
 
         // 色変更ブロックをクリックした可能性を記録する
         // ========================================================
-// 色変更ブロックの色見本部分をクリックしたか判定
-// ========================================================
+        // 色変更ブロックの色見本部分をクリックしたか判定
+        // ========================================================
 
         g_colorClickCandidate = false;
 
@@ -2938,6 +3070,13 @@ LRESULT CALLBACK WndProc(
 
     case WM_LBUTTONUP:
     {
+        if (g_isResizingList)
+        {
+            g_isResizingList = false;
+            if (GetCapture() == hwnd) ReleaseCapture();
+            return 0;
+        }
+
         // 色変更ブロックのクリック操作を判定する
         if (g_colorClickCandidate)
         {
@@ -3059,6 +3198,7 @@ LRESULT CALLBACK WndProc(
     {
         g_panning = false;
         g_draggingFromList = false;
+        g_isResizingList = false;
 
         return 0;
     }
