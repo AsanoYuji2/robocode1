@@ -302,11 +302,11 @@ std::wstring GetBlockName(const Block& b)
     {
     case BlockType::Move:
         return L"前進する  " +
-            std::to_wstring(b.distance) + L" 歩";
+            std::to_wstring(b.distance);
 
     case BlockType::MoveBackward:
         return L"後退する " +
-            std::to_wstring(b.distance) + L" 歩";
+            std::to_wstring(b.distance);
 
     case BlockType::TurnRight:
         return L"右に旋回 " +
@@ -318,11 +318,11 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::MoveRight:
         return L"右に移動  " +
-            std::to_wstring(b.distance) + L" 歩";
+            std::to_wstring(b.distance);
 
     case BlockType::MoveLeft:
         return L"左に移動  " +
-            std::to_wstring(b.distance) + L" 歩";
+            std::to_wstring(b.distance);
 
     case BlockType::FireBullet:
         return L"弾を発射 威力 " +
@@ -930,6 +930,169 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         DT_LEFT | DT_VCENTER |
         DT_SINGLELINE | DT_END_ELLIPSIS
     );
+
+    // ========================================================
+  // 数値の白い入力欄を常に表示
+  // ========================================================
+    std::wstring numericText;
+
+    switch (b.type)
+    {
+    case BlockType::Move:
+    case BlockType::MoveBackward:
+    case BlockType::MoveRight:
+    case BlockType::MoveLeft:
+        numericText = std::to_wstring(b.distance);
+        break;
+
+    case BlockType::Repeat:
+        numericText = std::to_wstring(b.repeatCount);
+        break;
+
+    case BlockType::Wait:
+        numericText = FormatNumber(b.waitSeconds);
+        break;
+
+    case BlockType::TurnRight:
+    case BlockType::TurnLeft:
+        numericText = FormatNumber(b.degrees);
+        break;
+
+    case BlockType::TurnGunRight:
+    case BlockType::TurnGunLeft:
+    case BlockType::TurnRadarRight:
+    case BlockType::TurnRadarLeft:
+    {
+        wchar_t buffer[64]{};
+        swprintf_s(buffer, L"%.2f", b.degrees);
+        numericText = buffer;
+        break;
+    }
+
+    case BlockType::FireBullet:
+        numericText = FormatNumber(b.power);
+        break;
+
+    case BlockType::CreateVariable:
+    case BlockType::SetVariable:
+    case BlockType::AddVariable:
+    case BlockType::SubtractVariable:
+        numericText = std::to_wstring(b.value);
+        break;
+
+    case BlockType::ChangeVariable:
+        numericText = std::to_wstring(
+            b.value >= 0
+            ? static_cast<long long>(b.value)
+            : -static_cast<long long>(b.value)
+        );
+        break;
+
+    case BlockType::If:
+        numericText = std::to_wstring(b.conditionValue);
+        break;
+
+    default:
+        break;
+    }
+
+    // 表示中のブロック名から数値の位置を求める
+    if (!numericText.empty())
+    {
+        const size_t numberPos = name.rfind(numericText);
+
+        if (numberPos != std::wstring::npos)
+        {
+            const std::wstring prefix =
+                name.substr(0, numberPos);
+
+            SIZE prefixSize{};
+            SIZE numberSize{};
+
+            GetTextExtentPoint32W(
+                hdc,
+                prefix.c_str(),
+                static_cast<int>(prefix.size()),
+                &prefixSize
+            );
+
+            GetTextExtentPoint32W(
+                hdc,
+                numericText.c_str(),
+                static_cast<int>(numericText.size()),
+                &numberSize
+            );
+
+            const int boxLeft = b.x + 12 + prefixSize.cx;
+            const int boxTop = b.y + (b.h - 24) / 2;
+            const int boxWidth = (std::max)(static_cast<int>(numberSize.cx) + 4, 30);
+
+            RECT numberBox =
+            {
+                boxLeft,
+                boxTop,
+                boxLeft + boxWidth,
+                boxTop + 24
+            };
+
+            // 白い入力欄
+            HBRUSH whiteBrush =
+                CreateSolidBrush(RGB(255, 255, 255));
+
+            HPEN borderPen =
+                CreatePen(PS_SOLID, 1, RGB(190, 190, 190));
+
+            if (whiteBrush && borderPen)
+            {
+                HGDIOBJ oldBoxBrush =
+                    SelectObject(hdc, whiteBrush);
+
+                HGDIOBJ oldBoxPen =
+                    SelectObject(hdc, borderPen);
+
+                RoundRect(
+                    hdc,
+                    numberBox.left,
+                    numberBox.top,
+                    numberBox.right,
+                    numberBox.bottom,
+                    8,
+                    8
+                );
+
+                SelectObject(hdc, oldBoxPen);
+                SelectObject(hdc, oldBoxBrush);
+            }
+
+            if (whiteBrush)
+                DeleteObject(whiteBrush);
+
+            if (borderPen)
+                DeleteObject(borderPen);
+
+            // 白い欄の中に数値を黒色で再描画
+            SetTextColor(hdc, RGB(30, 30, 30));
+
+            RECT numberTextRect = numberBox;
+            numberTextRect.left += 3;
+            numberTextRect.right -= 3;
+
+            DrawTextW(
+                hdc,
+                numericText.c_str(),
+                -1,
+                &numberTextRect,
+                DT_CENTER |
+                DT_VCENTER |
+                DT_SINGLELINE |
+                DT_NOPREFIX
+            );
+
+            SetTextColor(hdc, RGB(255, 255, 255));
+        }
+    }
+
+
 
     if (font)
     {
