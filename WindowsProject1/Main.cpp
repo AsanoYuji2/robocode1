@@ -12,6 +12,7 @@
 
 #include <commdlg.h>
 #include <gdiplus.h>
+#include <map>
 
 #include "BlockManager.h"
 #include "JavaGenerator.h"
@@ -188,6 +189,10 @@ enum class BlockCategory
 
 constexpr int CATEGORY_COUNT =
 static_cast<int>(BlockCategory::Count);
+
+// ブロックのインデックスと、移動前の元のX座標を記憶しておくマップ
+std::map<size_t, int> g_blockShiftMap;;
+std::map<size_t, int> g_originalXMap;
 
 // ============================================================
 // カテゴリ設定
@@ -490,6 +495,33 @@ void CloseBlockPalette()
         ShowWindow(g_blockList, SW_HIDE);
     g_showBlockList = false;
 
+    // ==========================================
+    // ★ バックアップしておいた元のX座標に一発で完全に書き戻す！
+    // ==========================================
+    auto blocks = ActiveManager().GetBlocks();
+    for (const auto& pair : g_originalXMap)
+    {
+        size_t idx = pair.first;
+        int originalX = pair.second;
+
+        if (idx < blocks.size())
+        {
+            Block b = blocks[idx];
+            b.x = originalX; // どんなに右に動いていても、元の座標へ一発で完璧に戻す！
+
+            // 万が一、計算ズレでカテゴリーエリア（例: X < 250 など）に入り込んでしまった場合の安全ガード
+            if (b.x < 250)
+            {
+                b.x = 250;
+            }
+
+            ActiveManager().UpdateBlockAt(static_cast<int>(idx), b);
+        }
+    }
+    g_originalXMap.clear();   // バックアップをクリア
+    g_blockShiftMap.clear();  // シフトマップもクリア
+    // ==========================================
+
     if (g_canvasLeft != 230)
     {
         const int delta = 230 - g_canvasLeft;
@@ -497,6 +529,7 @@ void CloseBlockPalette()
         g_viewX += delta;
     }
     UpdateView();
+    InvalidateEditor();
 }
 
 bool OpenUserFunctionEditor(const std::wstring& name)
@@ -966,25 +999,15 @@ void SelectCategory(BlockCategory category)
         return;
     }
 
-    // ★ すでに同じカテゴリが選択されている状態でクリックされた場合は、リストを閉じて終了する（トグル動作）
+    // すでに同じカテゴリが選択されている状態でクリックされた場合は、リストを閉じて終了する（トグル動作）
     if (g_selectedCategory == category && g_blockList && IsWindowVisible(g_blockList))
     {
-        ShowWindow(g_blockList, SW_HIDE);
-        g_showBlockList = false;
-
-        // 元の位置に戻してブロック群も一緒に左へ戻す
-        int oldLeft = g_canvasLeft;
-        g_canvasLeft = 230;
-        int delta = g_canvasLeft - oldLeft;
-        g_viewX += delta;
-        UpdateView();
-
-
-        InvalidateEditor();
+        CloseBlockPalette(); // 閉じる処理とブロック復元はすべてここで実行
+        InvalidateRect(GetActiveWindow(), nullptr, TRUE);
         return;
     }
 
-    //すでに別のリストが開いている状態かどうかを判定
+    // すでに別のリストが開いている状態かどうかを判定
     bool isOpen = (g_blockList && IsWindowVisible(g_blockList));
 
     g_selectedCategory = category;
@@ -1004,13 +1027,12 @@ void SelectCategory(BlockCategory category)
         if (maxListWidth < 120) maxListWidth = 120;
         if (g_listWidth > maxListWidth) g_listWidth = maxListWidth;
 
-        // リストの幅に、ユーザーがドラッグで変更した `g_listWidth` を適用する
         SetWindowPos(
             g_blockList,
             HWND_TOP,
             ptTopLeft.x,
             ptTopLeft.y,
-            g_listWidth, //カスタム幅を維持
+            g_listWidth,
             475,
             SWP_SHOWWINDOW
         );
@@ -1027,11 +1049,69 @@ void SelectCategory(BlockCategory category)
             g_canvasLeft = targetCanvasLeft;
             int delta = g_canvasLeft - oldLeft;
             g_viewX += delta;
+
+            // ==========================================
+            // 【完全版バックアップ＆平行移動方式】
+            // ==========================================
+            auto blocks = ActiveManager().GetBlocks();
+
+            // ★ 1. まだバックアップがなければ、リストを開く直前の全員のX座標を完全に保存する
+            if (g_originalXMap.empty())
+            {
+                for (size_t i = 0; i < blocks.size(); ++i)
+                {
+                    g_originalXMap[i] = blocks[i].x;
+                }
+            }
+
+            // 2. リストの右端座標を計算し、十分な余裕（例: 45px）を足した目標ラインを決める
+            int listScreenRight = ptTopLeft.x + g_listWidth;
+            POINT worldListRight = ActiveManager().ScreenToWorld(listScreenRight, CANVAS_TOP);
+
+            int targetMinX = worldListRight.x + 45; // 綺麗な余白
+
+            // 3. 一番左にあるものを基準に、必要なスライド量を求める
+            int maxShiftNeeded = 0;
+            for (const auto& b : blocks)
+            {
+                if (b.x < targetMinX)
+                {
+                    int needed = targetMinX - b.x;
+                    if (needed > maxShiftNeeded)
+                    {
+                        maxShiftNeeded = needed;
+                    }
+                }
+            }
+
+            // 4. 対象ブロック群を綺麗に平行移動させる
+            if (maxShiftNeeded > 0)
+            {
+                for (size_t i = 0; i < blocks.size(); ++i)
+                {
+                    Block b = blocks[i];
+                    if (b.x < targetMinX + 250)
+                    {
+                        b.x += maxShiftNeeded;
+                        blocks[i] = b;
+                        ActiveManager().UpdateBlockAt(static_cast<int>(i), b);
+                    }
+                }
+            }
+
+            auto updatedBlocks = ActiveManager().GetBlocks();
+            g_originalXMap.clear();
+            for (size_t i = 0; i < updatedBlocks.size(); ++i)
+            {
+                g_originalXMap[i] = updatedBlocks[i].x;
+            }
+            // ==========================================
+
             UpdateView();
         }
         else
         {
-            //すでに開いている状態で別のカテゴリに変えた場合：現在の幅にあわせてキャンバス位置を再調整
+            // すでに開いている状態で別のカテゴリに変えた場合
             int targetCanvasLeft = 220 + g_listWidth + 10;
             int maxCanvasLeft = clientRc.right - 340;
             if (targetCanvasLeft > maxCanvasLeft) targetCanvasLeft = maxCanvasLeft;
@@ -1047,7 +1127,6 @@ void SelectCategory(BlockCategory category)
 
     g_showBlockList = true;
 
-    // 削除モードを解除
     if (g_deleteMode)
     {
         g_deleteMode = false;
@@ -2189,130 +2268,7 @@ void DrawCanvasGrid(
     DeleteObject(pen);
 }
 
-// ============================================================
-// キャンバス内タブ（「メイン」「関数」「設定」）の描画
-// ============================================================
-//void DrawCanvasTabs(HDC hdc, int canvasLeft, int top)
-//{
-//    const wchar_t* tabs[] = { L"メイン", L"関数", L"設定" };
-//    int tabWidth = 80;
-//    int tabHeight = 32;
-//
-//    for (int i = 0; i < 3; ++i) {
-//        int x = canvasLeft + 15 + (i * (tabWidth + 4));
-//        RECT tabRc{ x, top + 10, x + tabWidth, top + 10 + tabHeight };
-//
-//        bool isSelected = (i == 0); // メインを選択中
-//        COLORREF bg = isSelected ? RGB(59, 130, 246) : RGB(229, 231, 235);
-//        COLORREF fg = isSelected ? RGB(255, 255, 255) : RGB(75, 85, 99);
-//
-//        HBRUSH b = CreateSolidBrush(bg);
-//        FillRect(hdc, &tabRc, b);
-//        DeleteObject(b);
-//
-//        SetBkMode(hdc, TRANSPARENT);
-//        SetTextColor(hdc, fg);
-//        DrawTextW(hdc, tabs[i], -1, &tabRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-//    }
-//}
 
-// 右側パネル全体（プレビュー、ステータス、ログ）の描画
-void DrawRightPanel(HDC hdc, int panelLeft, int top, int panelRight, int bottom)
-{
-    int width = panelRight - panelLeft;
-
-    // 背景
-    DrawPanel(hdc, panelLeft, top, panelRight, bottom, RGB(243, 244, 246));
-
-    // --- 1. ロボットの動作確認（プレビューエリア） ---
-    RECT headerRect{ panelLeft + 15, top + 10, panelRight - 15, top + 35 };
-    DrawLabel(hdc, L"ロボットの動作確認", headerRect, RGB(31, 41, 55), 14, true);
-
-    int previewMargin = 15;
-    int previewWidth = width - (previewMargin * 2);
-    int previewHeight = 220;
-    RECT previewRc{ panelLeft + previewMargin, top + 40, panelLeft + previewMargin + previewWidth, top + 40 + previewHeight };
-
-    // プレビュー背景（ダークブルー）
-    HBRUSH bgBrush = CreateSolidBrush(RGB(15, 23, 42));
-    FillRect(hdc, &previewRc, bgBrush);
-    DeleteObject(bgBrush);
-
-    // プレビューのグリッド線
-    HPEN gridPen = CreatePen(PS_SOLID, 1, RGB(30, 41, 59));
-    HPEN oldPen = (HPEN)SelectObject(hdc, gridPen);
-    for (int x = previewRc.left; x < previewRc.right; x += 25) {
-        MoveToEx(hdc, x, previewRc.top, nullptr);
-        LineTo(hdc, x, previewRc.bottom);
-    }
-    for (int y = previewRc.top; y < previewRc.bottom; y += 25) {
-        MoveToEx(hdc, previewRc.left, y, nullptr);
-        LineTo(hdc, previewRc.right, y);
-    }
-    SelectObject(hdc, oldPen);
-    DeleteObject(gridPen);
-
-    // --- 2. ステータスカード表示（ラウンド・エネルギー・残り敵数・時間） ---
-    int statusTop = previewRc.bottom + 10;
-    int cardGaps = 8;
-    int cardWidth = (previewWidth - (cardGaps * 3)) / 4;
-    int cardHeight = 48;
-
-    const wchar_t* titles[] = { L"ラウンド", L"エネルギー", L"残り敵数", L"時間" };
-    const wchar_t* values[] = { L"1", L"100", L"1", L"12.5s" };
-
-    for (int i = 0; i < 4; ++i) {
-        int cLeft = previewRc.left + i * (cardWidth + cardGaps);
-        RECT cRc{ cLeft, statusTop, cLeft + cardWidth, statusTop + cardHeight };
-
-        // 白背景のカード
-        HBRUSH cBrush = CreateSolidBrush(RGB(255, 255, 255));
-        FillRect(hdc, &cRc, cBrush);
-        DeleteObject(cBrush);
-
-        RECT tRc{ cLeft, statusTop + 4, cLeft + cardWidth, statusTop + 20 };
-        RECT vRc{ cLeft, statusTop + 22, cLeft + cardWidth, statusTop + 42 };
-
-        // 中央揃えテキスト
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, RGB(100, 116, 139));
-        DrawTextW(hdc, titles[i], -1, &tRc, DT_CENTER | DT_SINGLELINE);
-
-        SetTextColor(hdc, RGB(30, 41, 59));
-        DrawTextW(hdc, values[i], -1, &vRc, DT_CENTER | DT_SINGLELINE);
-    }
-
-    // --- 3. ログエリア ---
-    int logTop = statusTop + cardHeight + 15;
-    RECT logTitleRc{ panelLeft + 15, logTop, panelRight - 15, logTop + 25 };
-    DrawLabel(hdc, L"∨  ログ", logTitleRc, RGB(51, 65, 85), 13, true);
-
-    RECT logRc{ panelLeft + 15, logTop + 28, panelRight - 15, bottom - 15 };
-    HBRUSH logBg = CreateSolidBrush(RGB(255, 255, 255));
-    FillRect(hdc, &logRc, logBg);
-    DeleteObject(logBg);
-
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(226, 232, 240));
-    HGDIOBJ oldB = SelectObject(hdc, borderPen);
-    Rectangle(hdc, logRc.left, logRc.top, logRc.right, logRc.bottom);
-    SelectObject(hdc, oldB);
-    DeleteObject(borderPen);
-
-    // サンプルログの出力
-    const wchar_t* logs[] = {
-        L"> Javaファイルを生成しました",
-        L"> コンパイルに成功しました",
-        L"> Robocodeを起動しています...",
-        L"> ゲーム開始"
-    };
-
-    SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, RGB(71, 85, 105));
-    for (int i = 0; i < 4; ++i) {
-        RECT lTextRc{ logRc.left + 10, logRc.top + 10 + (i * 20), logRc.right - 10, logRc.top + 30 + (i * 20) };
-        DrawTextW(hdc, logs[i], -1, &lTextRc, DT_LEFT | DT_SINGLELINE);
-    }
-}
 
 // ファイルから安全に GDI+ Bitmap を読み込むヘルパー関数
 Bitmap* LoadBitmapFromExeFolder(const wchar_t* filename)
@@ -2374,14 +2330,14 @@ Bitmap* LoadBitmapFromExeFolder(const wchar_t* filename)
 void DrawNewLayout(HDC hdc, int width, int height)
 {
     int leftPanelWidth = g_canvasLeft;
-    int rightPanelWidth = 320;
+    int rightPanelWidth = 0;
     int canvasLeft = leftPanelWidth;
     int canvasRight = width - rightPanelWidth;
 
-    // 1. 全体の背景
+    //全体の背景
     DrawPanel(hdc, 0, 0, width, height, RGB(235, 240, 247));
 
-    // 2. 上部ツールバー
+    //上部ツールバー
     DrawPanel(hdc, 0, 0, width, 50, RGB(35, 43, 58));
 
     RECT titleRect{ 16, 0, 230, 50 };
@@ -2394,16 +2350,7 @@ void DrawNewLayout(HDC hdc, int width, int height)
         true
     );
 
-    // 上部ツールバーのボタン（新規・開く・保存・元に戻す・やり直し・実行・Java出力）
-    /*DrawToolbarButton(hdc, 250, 9, 65, 32, L"新規", RGB(70, 82, 101));
-    DrawToolbarButton(hdc, 320, 9, 65, 32, L"開く", RGB(70, 82, 101));
-    DrawToolbarButton(hdc, 390, 9, 65, 32, L"保存", RGB(70, 82, 101));
-    DrawToolbarButton(hdc, 460, 9, 85, 32, L"元に戻す", RGB(70, 82, 101));
-    DrawToolbarButton(hdc, 550, 9, 75, 32, L"やり直し", RGB(70, 82, 101));
-    DrawToolbarButton(hdc, 635, 9, 65, 32, L"実行", RGB(38, 145, 85));
-    DrawToolbarButton(hdc, 710, 9, 90, 32, L"Java出力", RGB(45, 110, 190));*/
-
-    // 3. 左側パネル
+    //左側パネル
     DrawPanel(hdc, 0, 50, leftPanelWidth, height, RGB(247, 249, 252));
 
     RECT categoryRect{ 12, 50, leftPanelWidth - 10, 85 };
@@ -2416,27 +2363,22 @@ void DrawNewLayout(HDC hdc, int width, int height)
         true
     );
 
-    // 4. 中央キャンバス背景
+    //キャンバス背景
     DrawPanel(hdc, canvasLeft, 50, canvasRight, height, RGB(250, 252, 255));
 
-    // キャンバス境界線
     HPEN pen = CreatePen(PS_SOLID, 1, RGB(205, 215, 228));
     HPEN oldPen = (HPEN)SelectObject(hdc, pen);
 
     MoveToEx(hdc, canvasLeft, 50, nullptr);
     LineTo(hdc, canvasLeft, height);
 
+    //右側の境界線をウィンドウ右端に合わせる
     MoveToEx(hdc, canvasRight, 50, nullptr);
     LineTo(hdc, canvasRight, height);
 
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
 
-    // 5. キャンバス内タブ描画
-    //DrawCanvasTabs(hdc, canvasLeft, 50);
-
-    // 6. 右側情報・プレビュー・ログパネル描画
-    DrawRightPanel(hdc, canvasRight, 50, width, height);
 }
 
 // フォルダ選択ダイアログの初期フォルダを指定するためのコールバック
@@ -3288,23 +3230,23 @@ LRESULT CALLBACK WndProc(
         if (g_isResizingList)
         {
             int newCanvasLeft = p.x;
-            if (newCanvasLeft >= 310 && newCanvasLeft <= 500) // 最小・最大の幅制限（カテゴリーに被らないよう最小値を調整）
+            if (newCanvasLeft >= 310 && newCanvasLeft <= 500) // 最小・最大の幅制限
             {
                 g_canvasLeft = newCanvasLeft;
 
-                // リストの左端をカテゴリーボタンの右側（220px）あたりに固定し、幅をキャンバスの境界線までにする
+                // リストの左端をカテゴリーボタンの右側（220px）に固定し、幅を算出
                 int listLeft = 220;
-                int listWidth = g_canvasLeft - listLeft - 10; // キャンバスの10px手前まで
+                int listWidth = g_canvasLeft - listLeft - 10;
                 if (listWidth < 80) listWidth = 80;
                 g_listWidth = listWidth;
 
-                // 1. ブロック一覧リストボックスの位置（X=220）と幅を更新
+                // 1. ブロック一覧リストボックスの位置と幅を更新
                 if (g_blockList)
                 {
                     SetWindowPos(g_blockList, nullptr, listLeft, 60, g_listWidth, 475, SWP_NOZORDER);
                 }
 
-                // 2. 関数リストの位置（X=220）と幅も更新
+                // 2. 関数リストの位置と幅を更新
                 if (g_createdFuncList)
                 {
                     SetWindowPos(g_createdFuncList, nullptr, listLeft, 95, g_listWidth, 500, SWP_NOZORDER);
@@ -3402,17 +3344,19 @@ LRESULT CALLBACK WndProc(
             GET_Y_LPARAM(lParam)
         };
 
-        // ★ キャンバスの左端の境界線をクリックしたらリサイズ開始
-        if (abs(p.x - g_canvasLeft) <= 6 && p.y >= 50)
-        {
-            g_isResizingList = true;
-            SetCapture(hwnd);
-            return 0;
-        }
 
         //リストが開いているとき、その右端（境界線）をクリックしたらリサイズ開始
         if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList))
         {
+            // キャンバス左端の境界線
+            if (abs(p.x - g_canvasLeft) <= 6 && p.y >= 50)
+            {
+                g_isResizingList = true;
+                SetCapture(hwnd);
+                return 0;
+            }
+
+            // リストの右端（境界線）
             RECT listRc;
             GetWindowRect(g_blockList, &listRc);
             ScreenToClient(hwnd, (LPPOINT)&listRc.left);
@@ -3426,24 +3370,7 @@ LRESULT CALLBACK WndProc(
             }
         }
 
-        //キャンバス側をクリックしたら、開いていたリストボックスを自動で閉じる
-        if (g_blockList && IsWindowVisible(g_blockList))
-        {
-            if (IsCanvasPoint(p))
-            {
-                ShowWindow(g_blockList, SW_HIDE);
-                g_showBlockList = false;
-
-                // リストを閉じたら、キャンバスの位置を元に戻す
-                g_canvasLeft = 230;//230
-
-                UpdateView();
-
-                InvalidateRect(hwnd, nullptr, TRUE); // 再描画を反映
-
-                return 0;
-            }
-        }
+        
 
         // Java出力ボタン
         if (p.x >= 10 && p.x <= 140 &&
@@ -3617,7 +3544,61 @@ LRESULT CALLBACK WndProc(
         if (g_isResizingList)
         {
             g_isResizingList = false;
+
+            if (g_blockList && IsWindowVisible(g_blockList))
+            {
+                RECT btnRc{};
+                GetWindowRect(g_tabFuncBtn, &btnRc);
+                POINT ptTopLeft = { btnRc.right + 5, btnRc.top };
+                ScreenToClient(hwnd, &ptTopLeft);
+
+                int listScreenRight = ptTopLeft.x + g_listWidth;
+                POINT worldListRight = ActiveManager().ScreenToWorld(listScreenRight, CANVAS_TOP);
+
+                int targetMinX = worldListRight.x + 45;
+
+                auto blocks = ActiveManager().GetBlocks();
+
+                // まだバックアップがなければ（念のため）、現在の位置を初期位置として保存しておく
+                if (g_originalXMap.empty())
+                {
+                    for (size_t i = 0; i < blocks.size(); ++i)
+                    {
+                        g_originalXMap[i] = blocks[i].x - g_blockShiftMap[i]; // 過去の移動分を引いた位置を記録
+                    }
+                }
+
+                int maxShiftNeeded = 0;
+                for (const auto& b : blocks)
+                {
+                    if (b.x < targetMinX)
+                    {
+                        int needed = targetMinX - b.x;
+                        if (needed > maxShiftNeeded)
+                        {
+                            maxShiftNeeded = needed;
+                        }
+                    }
+                }
+
+                if (maxShiftNeeded > 0)
+                {
+                    for (size_t i = 0; i < blocks.size(); ++i)
+                    {
+                        Block b = blocks[i];
+                        if (b.x < targetMinX + 250)
+                        {
+                            b.x += maxShiftNeeded;
+                            blocks[i] = b;
+                            ActiveManager().UpdateBlockAt(static_cast<int>(i), b);
+                        }
+                    }
+                }
+                UpdateView();
+            }
+
             if (GetCapture() == hwnd) ReleaseCapture();
+            InvalidateEditor();
             return 0;
         }
 
