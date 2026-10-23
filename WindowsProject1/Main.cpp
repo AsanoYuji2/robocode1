@@ -585,6 +585,21 @@ void ShowFunctionList()
     for (int i = 0; i < CATEGORY_COUNT; ++i)
         if (g_categoryButtons[i]) ShowWindow(g_categoryButtons[i], SW_HIDE);
 
+    //関数一覧を表示する際は、メインの可変リスト幅の影響をリセットし、キャンバス位置を初期位置（230）に戻す
+    if (g_canvasLeft != 230)
+    {
+        int delta = 230 - g_canvasLeft;
+        g_canvasLeft = 230;
+        g_viewX += delta;
+    }
+
+    // 関数一覧リスト（g_createdFuncList）の位置と幅を常に初期の固定位置に設定する
+    if (g_createdFuncList)
+    {
+        SetWindowPos(g_createdFuncList, nullptr, 12, 95, 202, 500, SWP_NOZORDER);
+        ShowWindow(g_createdFuncList, SW_SHOW);
+    }
+
     ReloadUserFunctions();
     RefreshFunctionList();
     if (g_createdFuncList) ShowWindow(g_createdFuncList, SW_SHOW);
@@ -969,40 +984,61 @@ void SelectCategory(BlockCategory category)
         return;
     }
 
+    //すでに別のリストが開いている状態かどうかを判定
+    bool isOpen = (g_blockList && IsWindowVisible(g_blockList));
+
     g_selectedCategory = category;
-
-    bool wasClosed = !IsWindowVisible(g_blockList);
-
-    // 選択したカテゴリのブロックを一覧に表示
     InitializeBlockList(g_blockList);
 
-
-    // 常に一番上のカテゴリボタン（移動＝index 0）の位置を基準にしてリストを配置する
     if (g_categoryButtons[0] && g_blockList)
     {
         RECT btnRc{};
         GetWindowRect(g_tabFuncBtn, &btnRc);
 
-        // スクリーン座標をメインウィンドウ（クライアント座標）に変換
         POINT ptTopLeft = { btnRc.right + 5, btnRc.top };
         ScreenToClient(g_mainWindow, &ptTopLeft);
 
-        // リストボックスの位置とサイズを設定して表示
+        RECT clientRc{};
+        GetClientRect(g_mainWindow, &clientRc);
+        int maxListWidth = clientRc.right - 350;
+        if (maxListWidth < 120) maxListWidth = 120;
+        if (g_listWidth > maxListWidth) g_listWidth = maxListWidth;
+
+        // リストの幅に、ユーザーがドラッグで変更した `g_listWidth` を適用する
         SetWindowPos(
             g_blockList,
             HWND_TOP,
             ptTopLeft.x,
             ptTopLeft.y,
-            220, // 幅
-            475, // 高さ
+            g_listWidth, //カスタム幅を維持
+            475,
             SWP_SHOWWINDOW
         );
 
-        // ★ リストが開いている間は、キャンバスの開始位置を右に広げる（リストに被らないようにする）
-        if (wasClosed)
+        if (!isOpen)
         {
+            // 初めて開く場合
             int oldLeft = g_canvasLeft;
-            g_canvasLeft = 370;
+            int targetCanvasLeft = 220 + g_listWidth + 20;
+            int maxCanvasLeft = clientRc.right - 340;
+            if (targetCanvasLeft > maxCanvasLeft) targetCanvasLeft = maxCanvasLeft;
+            if (targetCanvasLeft < 250) targetCanvasLeft = 250;
+
+            g_canvasLeft = targetCanvasLeft;
+            int delta = g_canvasLeft - oldLeft;
+            g_viewX += delta;
+            UpdateView();
+        }
+        else
+        {
+            //すでに開いている状態で別のカテゴリに変えた場合：現在の幅にあわせてキャンバス位置を再調整
+            int targetCanvasLeft = 220 + g_listWidth + 10;
+            int maxCanvasLeft = clientRc.right - 340;
+            if (targetCanvasLeft > maxCanvasLeft) targetCanvasLeft = maxCanvasLeft;
+            if (targetCanvasLeft < 250) targetCanvasLeft = 250;
+
+            int oldLeft = g_canvasLeft;
+            g_canvasLeft = targetCanvasLeft;
             int delta = g_canvasLeft - oldLeft;
             g_viewX += delta;
             UpdateView();
@@ -1095,22 +1131,6 @@ LRESULT CALLBACK BlockListProc(
             GET_Y_LPARAM(lp)
         };
 
-        // ★ リストの右端付近をクリックしたらリサイズ開始
-        if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList))
-        {
-            RECT listRc;
-            GetWindowRect(g_blockList, &listRc);
-            ScreenToClient(hwnd, (LPPOINT)&listRc.left);
-            ScreenToClient(hwnd, (LPPOINT)&listRc.right);
-
-            if (abs(p.x - listRc.right) <= 5 && p.y >= listRc.top && p.y <= listRc.bottom)
-            {
-                g_isResizingList = true;
-                SetCapture(hwnd);
-                return 0;
-            }
-        }
-
         LRESULT hit = SendMessageW(
             hwnd,
             LB_ITEMFROMPOINT,
@@ -1167,6 +1187,24 @@ LRESULT CALLBACK BlockListProc(
 
     case WM_LBUTTONDOWN:
     {
+        POINT p = {
+            GET_X_LPARAM(lp),
+            GET_Y_LPARAM(lp)
+        };
+
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+
+        // リストが開いていて、かつ表示されているときのみ右端でのリサイズを許可
+        if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList) && abs(p.x - rc.right) <= 6)
+        {
+            g_isResizingList = true;
+            SetCapture(g_mainWindow);
+            return 0;
+        }
+
+    
+
         // クリックされた項目を取得
         LRESULT index = SendMessageW(
             hwnd,
@@ -3238,6 +3276,60 @@ LRESULT CALLBACK WndProc(
             GET_Y_LPARAM(lParam)
         };
 
+        // リストが開いていて、かつキャンバス境界線付近にマウスがある場合のみカーソルを変更
+        if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList))
+        {
+            if (abs(p.x - g_canvasLeft) <= 6 && p.y >= 50)
+            {
+                SetCursor(LoadCursor(nullptr, IDC_SIZEWE));
+            }
+        }
+
+        if (g_isResizingList)
+        {
+            int newCanvasLeft = p.x;
+            if (newCanvasLeft >= 310 && newCanvasLeft <= 500) // 最小・最大の幅制限（カテゴリーに被らないよう最小値を調整）
+            {
+                g_canvasLeft = newCanvasLeft;
+
+                // リストの左端をカテゴリーボタンの右側（220px）あたりに固定し、幅をキャンバスの境界線までにする
+                int listLeft = 220;
+                int listWidth = g_canvasLeft - listLeft - 10; // キャンバスの10px手前まで
+                if (listWidth < 80) listWidth = 80;
+                g_listWidth = listWidth;
+
+                // 1. ブロック一覧リストボックスの位置（X=220）と幅を更新
+                if (g_blockList)
+                {
+                    SetWindowPos(g_blockList, nullptr, listLeft, 60, g_listWidth, 475, SWP_NOZORDER);
+                }
+
+                // 2. 関数リストの位置（X=220）と幅も更新
+                if (g_createdFuncList)
+                {
+                    SetWindowPos(g_createdFuncList, nullptr, listLeft, 95, g_listWidth, 500, SWP_NOZORDER);
+                }
+
+                UpdateView();
+                InvalidateEditor();
+            }
+            return 0;
+        }
+
+        //リストの右端にマウスが乗っているとき、カーソルを左右の矢印（↔）にする
+        if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList))
+        {
+            RECT listRc;
+            GetWindowRect(g_blockList, &listRc);
+            ScreenToClient(hwnd, (LPPOINT)&listRc.left);
+            ScreenToClient(hwnd, (LPPOINT)&listRc.right);
+
+            if (abs(p.x - listRc.right) <= 6 && p.y >= listRc.top && p.y <= listRc.bottom)
+            {
+                SetCursor(LoadCursor(nullptr, IDC_SIZEWE));
+            }
+        }
+
         // リストからブロックをドラッグ中
         if (g_draggingFromList)
         {
@@ -3310,6 +3402,30 @@ LRESULT CALLBACK WndProc(
             GET_Y_LPARAM(lParam)
         };
 
+        // ★ キャンバスの左端の境界線をクリックしたらリサイズ開始
+        if (abs(p.x - g_canvasLeft) <= 6 && p.y >= 50)
+        {
+            g_isResizingList = true;
+            SetCapture(hwnd);
+            return 0;
+        }
+
+        //リストが開いているとき、その右端（境界線）をクリックしたらリサイズ開始
+        if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList))
+        {
+            RECT listRc;
+            GetWindowRect(g_blockList, &listRc);
+            ScreenToClient(hwnd, (LPPOINT)&listRc.left);
+            ScreenToClient(hwnd, (LPPOINT)&listRc.right);
+
+            if (abs(p.x - listRc.right) <= 6 && p.y >= listRc.top && p.y <= listRc.bottom)
+            {
+                g_isResizingList = true;
+                SetCapture(hwnd);
+                return 0;
+            }
+        }
+
         //キャンバス側をクリックしたら、開いていたリストボックスを自動で閉じる
         if (g_blockList && IsWindowVisible(g_blockList))
         {
@@ -3319,7 +3435,7 @@ LRESULT CALLBACK WndProc(
                 g_showBlockList = false;
 
                 // リストを閉じたら、キャンバスの位置を元に戻す
-                g_canvasLeft = 230;
+                g_canvasLeft = 230;//230
 
                 UpdateView();
 
