@@ -496,7 +496,7 @@ void CloseBlockPalette()
     g_showBlockList = false;
 
     // ==========================================
-    // ★ バックアップしておいた元のX座標に一発で完全に書き戻す！
+    // ★ リストを開いたときの「完全な初期位置」をそのまま書き戻す
     // ==========================================
     auto blocks = ActiveManager().GetBlocks();
     for (const auto& pair : g_originalXMap)
@@ -507,13 +507,7 @@ void CloseBlockPalette()
         if (idx < blocks.size())
         {
             Block b = blocks[idx];
-            b.x = originalX; // どんなに右に動いていても、元の座標へ一発で完璧に戻す！
-
-            // 万が一、計算ズレでカテゴリーエリア（例: X < 250 など）に入り込んでしまった場合の安全ガード
-            if (b.x < 250)
-            {
-                b.x = 250;
-            }
+            b.x = originalX; // 計算せず、バックアップした最初の位置をそのまま代入！
 
             ActiveManager().UpdateBlockAt(static_cast<int>(idx), b);
         }
@@ -1055,7 +1049,7 @@ void SelectCategory(BlockCategory category)
             // ==========================================
             auto blocks = ActiveManager().GetBlocks();
 
-            // ★ 1. まだバックアップがなければ、リストを開く直前の全員のX座標を完全に保存する
+            // 1. 初めて開く直前のX座標をバックアップ
             if (g_originalXMap.empty())
             {
                 for (size_t i = 0; i < blocks.size(); ++i)
@@ -1064,19 +1058,19 @@ void SelectCategory(BlockCategory category)
                 }
             }
 
-            // 2. リストの右端座標を計算し、十分な余裕（例: 45px）を足した目標ラインを決める
+            // 2. リストの右端から必要な余白（例: 45px）を空けた目標ライン
             int listScreenRight = ptTopLeft.x + g_listWidth;
             POINT worldListRight = ActiveManager().ScreenToWorld(listScreenRight, CANVAS_TOP);
+            int targetMinX = worldListRight.x + 45;
 
-            int targetMinX = worldListRight.x + 45; // 綺麗な余白
-
-            // 3. 一番左にあるものを基準に、必要なスライド量を求める
+            // 3. 一番左にあるブロックを基準に、必要な全体のスライド量を求める
             int maxShiftNeeded = 0;
-            for (const auto& b : blocks)
+            for (const auto& pair : g_originalXMap)
             {
-                if (b.x < targetMinX)
+                int origX = pair.second;
+                if (origX < targetMinX)
                 {
-                    int needed = targetMinX - b.x;
+                    int needed = targetMinX - origX;
                     if (needed > maxShiftNeeded)
                     {
                         maxShiftNeeded = needed;
@@ -1084,15 +1078,26 @@ void SelectCategory(BlockCategory category)
                 }
             }
 
-            // 4. 対象ブロック群を綺麗に平行移動させる
+            // 4. 各ブロックの「初期位置 ＋ スライド量」に配置する（個別計算で重なりを防ぐ）
             if (maxShiftNeeded > 0)
             {
                 for (size_t i = 0; i < blocks.size(); ++i)
                 {
-                    Block b = blocks[i];
-                    if (b.x < targetMinX + 250)
+                    if (g_originalXMap.find(i) != g_originalXMap.end())
                     {
-                        b.x += maxShiftNeeded;
+                        int origX = g_originalXMap[i];
+                        Block b = blocks[i];
+
+                        // リスト周辺に位置していたブロックなら、初期位置をベースに右へ押し出す
+                        if (origX < targetMinX + 250)
+                        {
+                            b.x = origX + maxShiftNeeded;
+                        }
+                        else
+                        {
+                            b.x = origX; // 遠くのブロックは初期位置のまま
+                        }
+
                         blocks[i] = b;
                         ActiveManager().UpdateBlockAt(static_cast<int>(i), b);
                     }
