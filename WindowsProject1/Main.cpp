@@ -2498,13 +2498,13 @@ LRESULT CALLBACK WndProc(
         CreateWindowW(L"BUTTON", L"やり直し", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 530, 9, 65, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_REDO)), GetModuleHandleW(nullptr), nullptr);
         CreateWindowW(L"BUTTON", L"ロボットにする", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 600, 9, 130, 32, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(ID_TOOL_RUN)), GetModuleHandleW(nullptr), nullptr);
         //ロボット名ラベルと入力欄
-        CreateWindowW(L"STATIC", L"ロボット名:", WS_CHILD | WS_VISIBLE, 740, 9, 70, 20, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
-        g_editRobotName = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"MyRobot", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 810, 7, 120, 26, hwnd, reinterpret_cast<HMENU>(ID_EDIT_ROBOT_NAME), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"STATIC", L" ロボット名前", WS_CHILD | WS_VISIBLE, 735, 9, 110, 20, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        g_editRobotName = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"MyRobot", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 847, 7, 150, 26, hwnd, reinterpret_cast<HMENU>(ID_EDIT_ROBOT_NAME), GetModuleHandleW(nullptr), nullptr);
 
         //保存先フォルダのパス入力欄と参照ボタン
-        CreateWindowW(L"STATIC", L"保存先:", WS_CHILD | WS_VISIBLE, 940, 9, 50, 20, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
-        g_editFolderPath = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"C:\\robocode\\robots", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 990, 7, 180, 26, hwnd, reinterpret_cast<HMENU>(ID_EDIT_FOLDER_PATH), GetModuleHandleW(nullptr), nullptr);
-        CreateWindowW(L"BUTTON", L"参照...", WS_CHILD | WS_VISIBLE, 1180, 7, 60, 28, hwnd, reinterpret_cast<HMENU>(ID_BTN_BROWSE), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"STATIC", L" ロボット保存先", WS_CHILD | WS_VISIBLE, 1000, 9, 125, 20, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        g_editFolderPath = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"C:\\robocode\\robots", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 1127, 7, 150, 26, hwnd, reinterpret_cast<HMENU>(ID_EDIT_FOLDER_PATH), GetModuleHandleW(nullptr), nullptr);
+        CreateWindowW(L"BUTTON", L" 開く", WS_CHILD | WS_VISIBLE, 1285, 7, 70, 28, hwnd, reinterpret_cast<HMENU>(ID_BTN_BROWSE), GetModuleHandleW(nullptr), nullptr);
 
         // BMP 画像のロード
         g_hBmpNew = (HBITMAP)LoadImageW(nullptr, L"assets/new.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
@@ -2858,12 +2858,41 @@ LRESULT CALLBACK WndProc(
 
                 if (result == IDYES)
                 {
-                    // ここでは誤操作によるデータ消失を防ぐため、
-                    // 初期化処理の確認後に実装します。
+                    // 1. 編集中の関数データやメインのブロックをすべてクリア
+                    if (g_isEditingFunction)
+                    {
+                        // 関数編集中の場合は関数マネージャー側をクリア
+                        g_functionManager.ReplaceBlocks({}, {});
+                    }
+                    else
+                    {
+                        // メイン画面の場合はメインマネージャー側をクリア
+                        g_manager.ReplaceBlocks({}, {});
+                    }
+
+                    // 2. シフトや位置バックアップのマップを完全にリセット
+                    g_originalXMap.clear();
+                    g_blockShiftMap.clear();
+
+                    // 3. もしパレット（ブロック一覧）が開いていたら閉じる
+                    if (g_showBlockList)
+                    {
+                        CloseBlockPalette();
+                    }
+
+                    // 4. キャンバスの表示位置やズームを初期値に戻す
+                    g_zoom = INITIAL_ZOOM;
+                    g_viewX = INITIAL_VIEW_X;
+                    g_viewY = INITIAL_VIEW_Y;
+                    g_canvasLeft = 230;
+
+                    UpdateView();
+                    InvalidateEditor();
+
                     MessageBoxW(
                         hwnd,
-                        L"新規作成の初期化処理は、まだ接続されていません。",
-                        L"新規作成",
+                        L"新しいプロジェクトを作成しました。",
+                        L"新規作成完了",
                         MB_OK | MB_ICONINFORMATION
                     );
                 }
