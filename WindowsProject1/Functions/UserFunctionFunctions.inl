@@ -306,12 +306,14 @@ bool CreateUserFunction(HWND owner)
         return false;
     }
 
-    ReloadUserFunctions();
     if (FindUserFunctionIndex(name) >= 0 ||
-        std::filesystem::exists(GetUserFunctionDirectory() / (name + L".blk")))
+        std::filesystem::exists(
+            GetUserFunctionDirectory() / (name + L".blk")))
     {
-        MessageBoxW(owner, L"同じ名前の関数がすでにあります。別の名前を入力してください。",
-            L"名前が重複しています", MB_OK | MB_ICONWARNING);
+        MessageBoxW(owner,
+            L"同じ名前の関数がすでにあります。別の名前を入力してください。",
+            L"名前が重複しています",
+            MB_OK | MB_ICONWARNING);
         return false;
     }
 
@@ -357,7 +359,6 @@ void ShowFunctionList()
         ShowWindow(g_createdFuncList, SW_SHOW);
     }
 
-    ReloadUserFunctions();
     RefreshFunctionList();
     if (g_createdFuncList) ShowWindow(g_createdFuncList, SW_SHOW);
     SetFunctionHelp(L"「＋ 新しい関数を作る」をクリックすると作成できます。\n作成した関数をダブルクリックすると編集できます。\n関数はメイン画面の「関数」カテゴリから呼び出せます。", true);

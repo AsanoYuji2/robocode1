@@ -457,31 +457,42 @@ LRESULT CALLBACK WndProc(
                     MB_YESNO | MB_ICONWARNING
                 );
 
+
                 if (result == IDYES)
                 {
-                    // 1. 編集中の関数データやメインのブロックをすべてクリア
+                    // 1. 編集中の関数データやメインのブロックをクリア
                     if (g_isEditingFunction)
                     {
-                        // 関数編集中の場合は関数マネージャー側をクリア
                         g_functionManager.ReplaceBlocks({}, {});
                     }
                     else
                     {
-                        // メイン画面の場合はメインマネージャー側をクリア
                         g_manager.ReplaceBlocks({}, {});
                     }
 
-                    // 2. シフトや位置バックアップのマップを完全にリセット
+                    // 2. 現在のプロジェクトで使用する関数一覧だけをクリア
+                    // UserFunctions内の保存済みファイルは削除しない
+                    g_userFunctions.clear();
+
+                    // 3. 関数編集状態を解除
+                    g_isEditingFunction = false;
+                    g_currentFunctionName.clear();
+                    g_activeSidebarTab = 0;
+
+                    // 4. 関数一覧の表示を更新
+                    RefreshFunctionList();
+
+                    // 5. シフトや位置バックアップをリセット
                     g_originalXMap.clear();
                     g_blockShiftMap.clear();
 
-                    // 3. もしパレット（ブロック一覧）が開いていたら閉じる
+                    // 6. ブロック一覧パレットを閉じる
                     if (g_showBlockList)
                     {
                         CloseBlockPalette();
                     }
 
-                    // 4. キャンバスの表示位置やズームを初期値に戻す
+                    // 7. 表示位置やズームを初期値に戻す
                     g_zoom = INITIAL_ZOOM;
                     g_viewX = INITIAL_VIEW_X;
                     g_viewY = INITIAL_VIEW_Y;
@@ -497,6 +508,7 @@ LRESULT CALLBACK WndProc(
                         MB_OK | MB_ICONINFORMATION
                     );
                 }
+
             }
             return 0;
 
