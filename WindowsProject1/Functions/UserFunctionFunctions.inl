@@ -1,5 +1,6 @@
 int FindUserFunctionIndex(const std::wstring& name)
 {
+
     for (int i = 0; i < static_cast<int>(g_userFunctions.size()); ++i)
     {
         if (g_userFunctions[static_cast<size_t>(i)].name == name)
@@ -223,32 +224,27 @@ void SetFunctionHelp(const wchar_t* text, bool show)
     ShowWindow(g_functionHelpLabel, show ? SW_SHOW : SW_HIDE);
 }
 
+int g_totalShiftX = 0;
+
 void CloseBlockPalette()
 {
     if (g_blockList)
         ShowWindow(g_blockList, SW_HIDE);
     g_showBlockList = false;
 
-    // ==========================================
-    // ★ リストを開いたときの「完全な初期位置」をそのまま書き戻す
-    // ==========================================
-    auto blocks = ActiveManager().GetBlocks();
-    for (const auto& pair : g_originalXMap)
+    // 記憶していた移動量（g_totalShiftX）をそのまま引き戻す
+    if (g_totalShiftX > 0)
     {
-        size_t idx = pair.first;
-        int originalX = pair.second;
-
-        if (idx < blocks.size())
+        auto blocks = ActiveManager().GetBlocks();
+        for (size_t i = 0; i < blocks.size(); ++i)
         {
-            Block b = blocks[idx];
-            b.x = originalX; // 計算せず、バックアップした最初の位置をそのまま代入！
-
-            ActiveManager().UpdateBlockAt(static_cast<int>(idx), b);
+            Block b = blocks[i];
+            b.x -= g_totalShiftX; // 押し出した分をそのまま戻す
+            ActiveManager().UpdateBlockAt(static_cast<int>(i), b);
         }
+        g_totalShiftX = 0; // 移動量をリセット
     }
-    g_originalXMap.clear();   // バックアップをクリア
-    g_blockShiftMap.clear();  // シフトマップもクリア
-    // ==========================================
+
 
     if (g_canvasLeft != 230)
     {
