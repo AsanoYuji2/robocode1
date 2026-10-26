@@ -13,7 +13,7 @@ void SelectCategory(BlockCategory category)
     if (g_selectedCategory == category && g_blockList && IsWindowVisible(g_blockList))
     {
         CloseBlockPalette(); // 閉じる処理とブロック復元はすべてここで実行
-        InvalidateRect(GetActiveWindow(), nullptr, TRUE);
+        InvalidateRect(GetActiveWindow(), nullptr, FALSE);
         return;
     }
 
