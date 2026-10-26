@@ -13,6 +13,24 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Blocks">
+      <UniqueIdentifier>{7d8dda3b-07d2-43c0-84a4-3a0525485087}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Functions">
+      <UniqueIdentifier>{7dfff238-e6a2-42cd-aaab-6646a20b4ad3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Editor">
+      <UniqueIdentifier>{319ac29d-fb0f-4994-a4cc-ee4544f2e810}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Project">
+      <UniqueIdentifier>{3eb4401d-94ef-4d11-a5de-c3ccf5676001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UI">
+      <UniqueIdentifier>{1c326198-c3ea-4f7c-aa52-bb59c98741ce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Windows">
+      <UniqueIdentifier>{3c2566ee-2728-4023-a9a4-e99dea04c5a2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -84,5 +102,49 @@
     <Image Include="WindowsProject1.ico">
       <Filter>リソース ファイル</Filter>
     </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Blocks\BlockPalette.inl">
+      <Filter>Blocks</Filter>
+    </None>
+    <None Include="Editor\BlockListInput.inl">
+      <Filter>Editor</Filter>
+    </None>
+    <None Include="Editor\BlockValueEditing.inl">
+      <Filter>Editor</Filter>
+    </None>
+    <None Include="Editor\NumericInput.inl">
+      <Filter>Editor</Filter>
+    </None>
+    <None Include="Functions\UserFunctionFunctions.inl">
+      <Filter>Functions</Filter>
+    </None>
+    <None Include="Window\ApplicationEntry.inl">
+      <Filter>Windows</Filter>
+    </None>
+    <None Include="Window\WindowProcedure.inl">
+      <Filter>Windows</Filter>
+    </None>
+    <None Include="UI\BlockList.inl">
+      <Filter>UI</Filter>
+    </None>
+    <None Include="UI\CanvasDrawing.inl">
+      <Filter>UI</Filter>
+    </None>
+    <None Include="UI\CategoryDrawing.inl">
+      <Filter>UI</Filter>
+    </None>
+    <None Include="UI\CategorySelection.inl">
+      <Filter>UI</Filter>
+    </None>
+    <None Include="UI\FileDialogCallbacks.inl">
+      <Filter>UI</Filter>
+    </None>
+    <None Include="UI\ViewUpdate.inl">
+      <Filter>UI</Filter>
+    </None>
+    <None Include="Project\ProjectFileOperations.inl">
+      <Filter>Project</Filter>
+    </None>
   </ItemGroup>
 </Project>

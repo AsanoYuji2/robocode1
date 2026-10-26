@@ -159,6 +159,22 @@
     <Image Include="small.ico" />
     <Image Include="WindowsProject1.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Blocks\BlockPalette.inl" />
+    <None Include="Editor\BlockListInput.inl" />
+    <None Include="Editor\BlockValueEditing.inl" />
+    <None Include="Editor\NumericInput.inl" />
+    <None Include="Functions\UserFunctionFunctions.inl" />
+    <None Include="Project\ProjectFileOperations.inl" />
+    <None Include="UI\BlockList.inl" />
+    <None Include="UI\CanvasDrawing.inl" />
+    <None Include="UI\CategoryDrawing.inl" />
+    <None Include="UI\CategorySelection.inl" />
+    <None Include="UI\FileDialogCallbacks.inl" />
+    <None Include="UI\ViewUpdate.inl" />
+    <None Include="Window\ApplicationEntry.inl" />
+    <None Include="Window\WindowProcedure.inl" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
