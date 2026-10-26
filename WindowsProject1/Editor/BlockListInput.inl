@@ -154,7 +154,6 @@ LRESULT CALLBACK BlockListProc(
 // ============================================================
 // カテゴリボタンを作成
 // ============================================================
-
 LRESULT CALLBACK CategoryButtonProc(
     HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -177,33 +176,59 @@ LRESULT CALLBACK CategoryButtonProc(
     switch (msg)
     {
     case WM_MOUSEMOVE:
+    {
         if (g_hoveredCategory != index)
         {
+            int previousCategory = g_hoveredCategory;
+
             g_hoveredCategory = index;
-            InvalidateRect(hwnd, nullptr, FALSE);
+
+            // 前のボタンの光を消す
+            if (previousCategory >= 0 &&
+                previousCategory < CATEGORY_COUNT &&
+                g_categoryButtons[previousCategory])
+            {
+                InvalidateRect(
+                    g_categoryButtons[previousCategory],
+                    nullptr,
+                    TRUE);
+            }
+
+            // 現在のボタンを再描画
+            InvalidateRect(hwnd, nullptr, TRUE);
         }
 
-        {
-            TRACKMOUSEEVENT tme{};
-            tme.cbSize = sizeof(tme);
-            tme.dwFlags = TME_LEAVE;
-            tme.hwndTrack = hwnd;
-            TrackMouseEvent(&tme);
-        }
-        break;
+        TRACKMOUSEEVENT tme{};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd;
 
-    case WM_MOUSELEAVE:
-        if (g_hoveredCategory == index)
-        {
-            g_hoveredCategory = -1;
-            InvalidateRect(hwnd, nullptr, FALSE);
-        }
+        TrackMouseEvent(&tme);
         break;
     }
 
+    case WM_MOUSELEAVE:
+    {
+        if (g_hoveredCategory == index)
+        {
+            g_hoveredCategory = -1;
+
+            // 光を消して再描画
+            InvalidateRect(hwnd, nullptr, TRUE);
+        }
+        break;
+    }
+    }
+
     return CallWindowProcW(
-        g_oldCategoryProcs[index], hwnd, msg, wp, lp);
+        g_oldCategoryProcs[index],
+        hwnd,
+        msg,
+        wp,
+        lp);
 }
+
+
 
 void CreateCategoryButtons(HWND hwnd)
 {
