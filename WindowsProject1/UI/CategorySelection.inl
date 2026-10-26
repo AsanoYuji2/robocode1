@@ -1,5 +1,8 @@
+
+
 void SelectCategory(BlockCategory category)
 {
+
     if (category < BlockCategory::Move ||
         category >= BlockCategory::Count)
     {
@@ -57,33 +60,19 @@ void SelectCategory(BlockCategory category)
             int delta = g_canvasLeft - oldLeft;
             g_viewX += delta;
 
-            // ==========================================
-            // 【完全版バックアップ＆平行移動方式】
-            // ==========================================
             auto blocks = ActiveManager().GetBlocks();
 
-            // 1. 初めて開く直前のX座標をバックアップ
-            if (g_originalXMap.empty())
-            {
-                for (size_t i = 0; i < blocks.size(); ++i)
-                {
-                    g_originalXMap[i] = blocks[i].x;
-                }
-            }
-
-            // 2. リストの右端から必要な余白（例: 45px）を空けた目標ライン
             int listScreenRight = ptTopLeft.x + g_listWidth;
             POINT worldListRight = ActiveManager().ScreenToWorld(listScreenRight, CANVAS_TOP);
-            int targetMinX = worldListRight.x + 45;
+            int targetMinX = worldListRight.x + 5;
 
-            // 3. 一番左にあるブロックを基準に、必要な全体のスライド量を求める
+            // 一番左にあるブロックを基準に、必要な全体のスライド量を求める
             int maxShiftNeeded = 0;
-            for (const auto& pair : g_originalXMap)
+            for (const auto& b : blocks)
             {
-                int origX = pair.second;
-                if (origX < targetMinX)
+                if (b.x < targetMinX && b.x > targetMinX - 80)
                 {
-                    int needed = targetMinX - origX;
+                    int needed = targetMinX - b.x;
                     if (needed > maxShiftNeeded)
                     {
                         maxShiftNeeded = needed;
@@ -91,39 +80,23 @@ void SelectCategory(BlockCategory category)
                 }
             }
 
-            // 4. 各ブロックの「初期位置 ＋ スライド量」に配置する（個別計算で重なりを防ぐ）
-            if (maxShiftNeeded > 0)
+            // 移動量をグローバル変数に記憶！
+            g_totalShiftX = maxShiftNeeded;
+
+            // 各ブロックを右へ押し出す
+            if (g_totalShiftX > 0)
             {
                 for (size_t i = 0; i < blocks.size(); ++i)
                 {
-                    if (g_originalXMap.find(i) != g_originalXMap.end())
+                    Block b = blocks[i];
+                    if (b.x < targetMinX + 250)
                     {
-                        int origX = g_originalXMap[i];
-                        Block b = blocks[i];
-
-                        // リスト周辺に位置していたブロックなら、初期位置をベースに右へ押し出す
-                        if (origX < targetMinX + 250)
-                        {
-                            b.x = origX + maxShiftNeeded;
-                        }
-                        else
-                        {
-                            b.x = origX; // 遠くのブロックは初期位置のまま
-                        }
-
-                        blocks[i] = b;
-                        ActiveManager().UpdateBlockAt(static_cast<int>(i), b);
+                        b.x += g_totalShiftX;
                     }
+                    blocks[i] = b;
+                    ActiveManager().UpdateBlockAt(static_cast<int>(i), b);
                 }
             }
-
-            auto updatedBlocks = ActiveManager().GetBlocks();
-            g_originalXMap.clear();
-            for (size_t i = 0; i < updatedBlocks.size(); ++i)
-            {
-                g_originalXMap[i] = updatedBlocks[i].x;
-            }
-            // ==========================================
 
             UpdateView();
         }
