@@ -38,7 +38,7 @@ int WINAPI WinMain(
 
     // メインウィンドウの作成
     HWND hwnd = CreateWindowExW(
-        0,
+        WS_EX_COMPOSITED,
         CLASS_NAME,
         L"自作ブロックエディタ",
         WS_OVERLAPPEDWINDOW,
