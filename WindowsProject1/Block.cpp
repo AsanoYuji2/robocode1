@@ -339,7 +339,7 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::Wait:
         return L"指定秒数待つ " +
-            FormatNumber(b.waitSeconds) + L"秒";
+            FormatNumber(b.waitSeconds) + L" 秒";
 
     case BlockType::If:
         switch (b.condition)
@@ -733,7 +733,12 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     if (!brush)
         return;
 
-    HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+    HPEN pen = CreatePen(
+        PS_SOLID,
+        1,
+        RGB(255, 255, 255)
+    );
+
     if (!pen)
     {
         DeleteObject(brush);
@@ -742,7 +747,6 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
     HGDIOBJ oldBrush = SelectObject(hdc, brush);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
-
 
     // ========================================================
     // Repeat：C字型ブロック
@@ -762,38 +766,31 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
         POINT points[] =
         {
-            // 上側の接続用タブ
             { x, y },
             { x + tabX, y },
             { x + tabX, y + tabH },
             { x + tabX + tabW, y + tabH },
             { x + tabX + tabW, y },
 
-            // 上側の外枠
             { x + w, y },
             { x + w, y + headerH },
 
-            // 内側の左壁
             { x + wallW, y + headerH },
             { x + wallW, y + h - bottomH },
 
-            // 下側の中身のへこみ
             { x + wallW + 24, y + h - bottomH },
             { x + wallW + 24, y + h - bottomH + 8 },
             { x + wallW + 64, y + h - bottomH + 8 },
             { x + wallW + 64, y + h - bottomH },
 
-            // 下側の横棒の右端
             { x + w, y + h - bottomH },
             { x + w, y + h },
 
-            // 下側の接続用タブ
             { x + tabX + tabW, y + h },
             { x + tabX + tabW, y + h + tabH },
             { x + tabX, y + h + tabH },
             { x + tabX, y + h },
 
-            // 左側の外枠
             { x, y + h }
         };
 
@@ -804,7 +801,8 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         );
 
         // 内側を背景色で塗る
-        HBRUSH bgBrush = CreateSolidBrush(RGB(245, 245, 245));
+        HBRUSH bgBrush =
+            CreateSolidBrush(RGB(245, 245, 245));
 
         if (bgBrush)
         {
@@ -835,14 +833,18 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             sizeof(innerTab) / sizeof(innerTab[0])
         );
 
-        // ブロック名
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(255, 255, 255));
 
-        const std::wstring repeatName =
-            L"繰り返し " + std::to_wstring(b.repeatCount) + L" 回";
+       
 
-        RECT textRect =
+        const std::wstring repeatPrefix = L"繰り返し ";
+        const std::wstring repeatNumber =
+            std::to_wstring(b.repeatCount);
+        const std::wstring repeatSuffix = L" 回";
+
+        // 「繰り返し」の文字を描画
+        RECT repeatTextRect =
         {
             x + 12,
             y + 8,
@@ -852,21 +854,13 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
         DrawTextW(
             hdc,
-            repeatName.c_str(),
+            repeatPrefix.c_str(),
             -1,
-            &textRect,
-            DT_LEFT | DT_VCENTER |
-            DT_SINGLELINE | DT_END_ELLIPSIS
+            &repeatTextRect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE
         );
 
-        // ========================================================
-       // 繰り返し回数の白い入力欄
-       // ========================================================
-        const std::wstring repeatNumber =
-            std::to_wstring(b.repeatCount);
-
-        const std::wstring repeatPrefix = L"繰り返し ";
-
+        // 数値の位置と幅を計算
         SIZE prefixSize{};
         SIZE numberSize{};
 
@@ -885,9 +879,12 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         );
 
         const int boxLeft = x + 12 + prefixSize.cx;
-        const int boxTop = y + (headerH - 24) / 2;
-        const int boxWidth =
-            (std::max)(static_cast<int>(numberSize.cx) + 4, 30);
+        const int boxWidth = (std::max)(
+            static_cast<int>(numberSize.cx) + 4,
+            30
+            );
+
+        const int boxTop = y + 3 + (headerH - 24) / 2;
 
         RECT numberBox =
         {
@@ -897,6 +894,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             boxTop + 24
         };
 
+        // 白い入力枠を描画
         HBRUSH whiteBrush =
             CreateSolidBrush(RGB(255, 255, 255));
 
@@ -905,11 +903,8 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
         if (whiteBrush && borderPen)
         {
-            HGDIOBJ oldBoxBrush =
-                SelectObject(hdc, whiteBrush);
-
-            HGDIOBJ oldBoxPen =
-                SelectObject(hdc, borderPen);
+            HGDIOBJ oldBoxBrush = SelectObject(hdc, whiteBrush);
+            HGDIOBJ oldBoxPen = SelectObject(hdc, borderPen);
 
             RoundRect(
                 hdc,
@@ -931,7 +926,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         if (borderPen)
             DeleteObject(borderPen);
 
-        // 白い枠の中に回数を黒色で表示
+        // 白い枠の中に数値を描画
         SetTextColor(hdc, RGB(30, 30, 30));
 
         RECT numberTextRect = numberBox;
@@ -943,33 +938,25 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             repeatNumber.c_str(),
             -1,
             &numberTextRect,
-            DT_CENTER |
-            DT_VCENTER |
-            DT_SINGLELINE |
-            DT_NOPREFIX
+            DT_CENTER | DT_VCENTER |
+            DT_SINGLELINE | DT_NOPREFIX
         );
 
+        // 「回」を白文字で描画
         SetTextColor(hdc, RGB(255, 255, 255));
 
-        // 「回」を白色で表示
-        RECT unitRect =
-        {
-            numberBox.right + 3,
-            y + 8,
-            x + w - 8,
-            y + headerH
-        };
+        RECT suffixRect = repeatTextRect;
+        suffixRect.left = boxLeft + boxWidth + 3;
 
         DrawTextW(
             hdc,
-            L"回",
+            repeatSuffix.c_str(),
             -1,
-            &unitRect,
-            DT_LEFT | DT_VCENTER |
-            DT_SINGLELINE | DT_END_ELLIPSIS
+            &suffixRect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE
         );
+      
 
-        // GDIオブジェクトを元に戻して解放
         SelectObject(hdc, oldPen);
         SelectObject(hdc, oldBrush);
 
@@ -1012,15 +999,15 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     FillRect(hdc, &tab, brush);
 
     // ========================================================
-    // ブロック名とフォントサイズ
+    // ブロック名とフォント
     // ========================================================
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 255, 255));
 
     const std::wstring name = GetBlockName(b);
 
-    // フォントを小さくする対象だけフォントサイズを変更
-    const int fontHeight = IsSmallFontBlock(b.type) ? -14 : -16;
+    const int fontHeight =
+        IsSmallFontBlock(b.type) ? -14 : -16;
 
     HFONT font = CreateFontW(
         fontHeight,
@@ -1052,18 +1039,9 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         b.y + b.h - 4
     };
 
-    DrawTextW(
-        hdc,
-        name.c_str(),
-        -1,
-        &textRect,
-        DT_LEFT | DT_VCENTER |
-        DT_SINGLELINE | DT_END_ELLIPSIS
-    );
-
     // ========================================================
-  // 数値の白い入力欄を常に表示
-  // ========================================================
+    // 数値入力欄に表示する文字列
+    // ========================================================
     std::wstring numericText;
 
     switch (b.type)
@@ -1126,8 +1104,29 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         break;
     }
 
-    // 表示中のブロック名から数値の位置を求める
-    if (!numericText.empty())
+    // ========================================================
+    // 数値の前後を分割して描画
+    // 変数ブロックと「指定秒数待つ」が対象
+    // ========================================================
+    const bool isVariableBlock =
+        b.type == BlockType::SetVariable ||
+        b.type == BlockType::ChangeVariable ||
+        b.type == BlockType::AddVariable ||
+        b.type == BlockType::SubtractVariable;
+
+    const bool shouldSplitText =
+        isVariableBlock ||
+        b.type == BlockType::Wait;
+
+    bool drewSplitText = false;
+
+    SIZE prefixSize{};
+    SIZE numberSize{};
+
+    int boxLeft = 0;
+    int boxWidth = 0;
+
+    if (shouldSplitText && !numericText.empty())
     {
         const size_t numberPos = name.rfind(numericText);
 
@@ -1136,8 +1135,8 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             const std::wstring prefix =
                 name.substr(0, numberPos);
 
-            SIZE prefixSize{};
-            SIZE numberSize{};
+            const std::wstring suffix =
+                name.substr(numberPos + numericText.size());
 
             GetTextExtentPoint32W(
                 hdc,
@@ -1153,9 +1152,94 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
                 &numberSize
             );
 
-            const int boxLeft = b.x + 12 + prefixSize.cx;
-            const int boxTop = b.y + (b.h - 24) / 2;
-            const int boxWidth = (std::max)(static_cast<int>(numberSize.cx) + 4, 30);
+            // 数値入力欄の位置と幅
+            boxLeft = b.x + 12 + prefixSize.cx;
+
+            boxWidth = (std::max)(
+                static_cast<int>(numberSize.cx) + 4,
+                30
+                );
+
+            // 数値の前の文字は元の位置に描画
+            RECT prefixRect = textRect;
+
+            DrawTextW(
+                hdc,
+                prefix.c_str(),
+                -1,
+                &prefixRect,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE
+            );
+
+            // 数値より後ろの文字だけを右へ移動
+            RECT suffixRect = textRect;
+
+            suffixRect.left =
+                boxLeft + boxWidth + 3;
+
+            DrawTextW(
+                hdc,
+                suffix.c_str(),
+                -1,
+                &suffixRect,
+                DT_LEFT | DT_VCENTER |
+                DT_SINGLELINE | DT_END_ELLIPSIS
+            );
+
+            drewSplitText = true;
+        }
+    }
+
+    // 分割対象ではないブロックは全文を従来どおり描画
+    if (!drewSplitText)
+    {
+        DrawTextW(
+            hdc,
+            name.c_str(),
+            -1,
+            &textRect,
+            DT_LEFT | DT_VCENTER |
+            DT_SINGLELINE | DT_END_ELLIPSIS
+        );
+    }
+
+    // ========================================================
+    // 数値の白い入力欄
+    // ========================================================
+    if (!numericText.empty())
+    {
+        const size_t numberPos = name.rfind(numericText);
+
+        if (numberPos != std::wstring::npos)
+        {
+            if (!drewSplitText)
+            {
+                const std::wstring prefix =
+                    name.substr(0, numberPos);
+
+                GetTextExtentPoint32W(
+                    hdc,
+                    prefix.c_str(),
+                    static_cast<int>(prefix.size()),
+                    &prefixSize
+                );
+
+                GetTextExtentPoint32W(
+                    hdc,
+                    numericText.c_str(),
+                    static_cast<int>(numericText.size()),
+                    &numberSize
+                );
+
+                boxLeft = b.x + 12 + prefixSize.cx;
+                boxWidth = (std::max)(
+                    static_cast<int>(numberSize.cx) + 4,
+                    30
+                    );
+            }
+
+            const int boxTop =
+                b.y + (b.h - 24) / 2;
 
             RECT numberBox =
             {
@@ -1170,7 +1254,11 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
                 CreateSolidBrush(RGB(255, 255, 255));
 
             HPEN borderPen =
-                CreatePen(PS_SOLID, 1, RGB(190, 190, 190));
+                CreatePen(
+                    PS_SOLID,
+                    1,
+                    RGB(190, 190, 190)
+                );
 
             if (whiteBrush && borderPen)
             {
@@ -1200,7 +1288,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             if (borderPen)
                 DeleteObject(borderPen);
 
-            // 白い欄の中に数値を黒色で再描画
+            // 白い入力欄の中に数値を黒色で描画
             SetTextColor(hdc, RGB(30, 30, 30));
 
             RECT numberTextRect = numberBox;
@@ -1222,8 +1310,9 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         }
     }
 
-
-
+    // ========================================================
+    // フォントを元に戻して解放
+    // ========================================================
     if (font)
     {
         SelectObject(hdc, oldFont);
@@ -1273,7 +1362,8 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             b.y + 39
         };
 
-        HBRUSH colorBrush = CreateSolidBrush(previewColor);
+        HBRUSH colorBrush =
+            CreateSolidBrush(previewColor);
 
         if (colorBrush)
         {
@@ -1300,6 +1390,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     DeleteObject(pen);
     DeleteObject(brush);
 }
+
 
 // ============================================================
 // If / Else / EndIf の対応位置
