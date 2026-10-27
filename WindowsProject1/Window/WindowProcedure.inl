@@ -6,6 +6,10 @@ LRESULT CALLBACK WndProc(
 {
     switch (msg)
     {
+    case WM_ERASEBKGND:
+        // 背景の自動消去を抑制してちらつきを防ぐ
+        return TRUE;
+
     case WM_CREATE:
     {
         g_mainWindow = hwnd;
@@ -119,6 +123,7 @@ LRESULT CALLBACK WndProc(
         return 0; // ← WM_CREATE の最後に 1 回だけ return 0 します
     }
 
+
     // ========================================================
     // ボタン描画
     // ========================================================
@@ -159,6 +164,8 @@ LRESULT CALLBACK WndProc(
 
         if (id == ID_BLOCK_LIST)
         {
+
+
             DrawBlockListItem(dis);
             return TRUE;
         }
@@ -874,8 +881,23 @@ LRESULT CALLBACK WndProc(
             }
         }
 
+        // キャンバス移動
+        if (g_panning)
+        {
+            g_viewX += p.x - g_lastPanPoint.x;
+            g_viewY += p.y - g_lastPanPoint.y;
+
+            g_lastPanPoint = p;
+
+            UpdateView();
+            InvalidateCanvas();
+
+            return 0;
+        }
+
         if (g_isResizingList)
         {
+            int oldCanvasLeft = g_canvasLeft;
             int newCanvasLeft = p.x;
             if (newCanvasLeft >= 310 && newCanvasLeft <= 500) // 最小・最大の幅制限
             {
@@ -887,20 +909,71 @@ LRESULT CALLBACK WndProc(
                 if (listWidth < 80) listWidth = 80;
                 g_listWidth = listWidth;
 
-                // 1. ブロック一覧リストボックスの位置と幅を更新
-                if (g_blockList)
-                {
-                    SetWindowPos(g_blockList, nullptr, listLeft, 60, g_listWidth, 475, SWP_NOZORDER);
-                }
+                HDWP hdwp = BeginDeferWindowPos(2);
 
-                // 2. 関数リストの位置と幅を更新
-                if (g_createdFuncList)
+                if (hdwp)
                 {
-                    SetWindowPos(g_createdFuncList, nullptr, listLeft, 95, g_listWidth, 500, SWP_NOZORDER);
+                    if (g_blockList)
+                    {
+                        hdwp = DeferWindowPos(
+                            hdwp,
+                            g_blockList,
+                            nullptr,
+                            listLeft, 60, g_listWidth, 475,
+                            SWP_NOZORDER | SWP_NOACTIVATE
+                        );
+                    }
+
+                    if (hdwp && g_createdFuncList)
+                    {
+                        hdwp = DeferWindowPos(
+                            hdwp,
+                            g_createdFuncList,
+                            nullptr,
+                            listLeft, 95, g_listWidth, 500,
+                            SWP_NOZORDER | SWP_NOACTIVATE
+                        );
+                    }
+
+                    if (hdwp)
+                    {
+                        EndDeferWindowPos(hdwp);
+                    }
+                }
+                else
+                {
+                    // まとめて実行できなかった場合は通常の方法で更新
+                    if (g_blockList)
+                    {
+                        SetWindowPos(
+                            g_blockList, nullptr,
+                            listLeft, 60, g_listWidth, 475,
+                            SWP_NOZORDER | SWP_NOACTIVATE
+                        );
+                    }
+
+                    if (g_createdFuncList)
+                    {
+                        SetWindowPos(
+                            g_createdFuncList, nullptr,
+                            listLeft, 95, g_listWidth, 500,
+                            SWP_NOZORDER | SWP_NOACTIVATE
+                        );
+                    }
                 }
 
                 UpdateView();
-                InvalidateEditor();
+                // 変更されたキャンバス領域を再描画
+                RECT dirtyRect{};
+                GetClientRect(hwnd, &dirtyRect);
+
+                // 変化した境界より右側だけを再描画する
+                dirtyRect.left = (std::min)(oldCanvasLeft, g_canvasLeft);
+
+                // 上部ツールバー（Y座標 0～49）は再描画対象から外す
+                dirtyRect.top = 50;
+
+                InvalidateRect(hwnd, &dirtyRect, FALSE);
             }
             return 0;
         }
@@ -924,24 +997,19 @@ LRESULT CALLBACK WndProc(
         {
             g_listDragPoint = p;
 
-            InvalidateEditor();
+            // ドラッグ中の表示に必要な親ウィンドウだけを再描画
+            RECT dragRect = {
+                g_listDragPoint.x + 12,
+                g_listDragPoint.y + 12,
+                g_listDragPoint.x + 180,
+                g_listDragPoint.y + 42
+            };
+
+            InvalidateRect(hwnd, &dragRect, FALSE);
 
             return 0;
         }
 
-        // キャンバス移動
-        if (g_panning)
-        {
-            g_viewX += p.x - g_lastPanPoint.x;
-            g_viewY += p.y - g_lastPanPoint.y;
-
-            g_lastPanPoint = p;
-
-            UpdateView();
-            InvalidateEditor();
-
-            return 0;
-        }
 
         ActiveManager().OnMouseMove(p.x, p.y);
 
@@ -1017,7 +1085,7 @@ LRESULT CALLBACK WndProc(
             }
         }
 
-        
+
 
         // Java出力ボタン
         if (p.x >= 10 && p.x <= 140 &&
@@ -1493,17 +1561,25 @@ LRESULT CALLBACK WndProc(
         );
 
         // ⑥ 描画結果を画面へ転送
-        BitBlt(
-            hdc,
-            0,
-            0,
-            rc.right,
-            rc.bottom,
-            memDC,
-            0,
-            0,
-            SRCCOPY
-        );
+        const RECT& dirty = ps.rcPaint;
+
+        const int dirtyWidth = dirty.right - dirty.left;
+        const int dirtyHeight = dirty.bottom - dirty.top;
+
+        if (dirtyWidth > 0 && dirtyHeight > 0)
+        {
+            BitBlt(
+                hdc,
+                dirty.left,
+                dirty.top,
+                dirtyWidth,
+                dirtyHeight,
+                memDC,
+                dirty.left,
+                dirty.top,
+                SRCCOPY
+            );
+        }
 
         // ⑦ ダブルバッファを解放
         SelectObject(memDC, oldBitmap);
@@ -1554,6 +1630,8 @@ LRESULT CALLBACK WndProc(
         wParam,
         lParam
     );
+
+
 }
 
 
