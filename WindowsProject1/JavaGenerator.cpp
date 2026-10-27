@@ -22,7 +22,6 @@ namespace
     struct ExpandedBlock
     {
         Block block{};
-        // Repeat の内側を repeatBodies から展開したときに追加する閉じかっこ。
         bool syntheticRepeatEnd = false;
     };
 
@@ -73,8 +72,7 @@ namespace
         return std::string(static_cast<size_t>((std::max)(0, level) * 4), ' ');
     }
 
-    void AddName(std::set<std::wstring>& names, const std::wstring& name,
-        const wchar_t* fallback)
+    void AddName(std::set<std::wstring>& names, const std::wstring& name, const wchar_t* fallback)
     {
         names.insert(name.empty() ? fallback : name);
     }
@@ -130,8 +128,7 @@ namespace
 
             if (b.type == BlockType::If)
             {
-                if (b.condition == ConditionType::And ||
-                    b.condition == ConditionType::Or)
+                if (b.condition == ConditionType::And || b.condition == ConditionType::Or)
                 {
                     CollectSimpleConditionNames(
                         b.leftCondition, b.leftVariableName, b.booleanVariableName,
@@ -169,7 +166,6 @@ namespace
             }
             else
             {
-                // Java の識別子に使えない文字は _ に置き換える。
                 result.push_back('_');
             }
         }
@@ -276,7 +272,6 @@ namespace
             return "getEnergy() <= " + number;
         case ConditionType::BooleanVariable:
             return booleanVariable;
-            // 複合条件は BlockConditionExpression で処理する。
         case ConditionType::And:
         case ConditionType::Or:
         case ConditionType::Not:
@@ -346,7 +341,6 @@ namespace
         return keywords.find(value) == keywords.end();
     }
 
-
     bool ExpandGraphAndCalls(
         const std::vector<Block>& blocks,
         const std::vector<int>& parents,
@@ -381,16 +375,13 @@ namespace
 
         if (found == functions.end())
         {
-            error = L"呼び出し先の自作関数「" + name + L"」が見つかりません。\n"
-                L"関数一覧を再読み込みし、関数が削除されていないか確認してください。";
+            error = L"呼び出し先の自作関数「" + name + L"」が見つかりません。";
             return false;
         }
 
         if (std::find(callStack.begin(), callStack.end(), name) != callStack.end())
         {
-            error = L"自作関数の呼び出しが循環しています。\n"
-                L"例：関数Aが関数Bを呼び、関数Bが関数Aを呼んでいる状態です。\n"
-                L"循環する呼び出しをなくしてください。";
+            error = L"自作関数の呼び出しが循環しています。";
             return false;
         }
 
@@ -435,7 +426,6 @@ namespace
 
         if (!hasParentGraph)
         {
-            // 互換版の呼び出し。接続関係がないため、上から下へ処理する。
             std::vector<size_t> order(count);
             for (size_t i = 0; i < count; ++i) order[i] = i;
             std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b)
@@ -460,7 +450,6 @@ namespace
             if (parent < 0 || parent >= static_cast<int>(count) || parent == static_cast<int>(i))
                 continue;
 
-            // 不正な複数の子がある場合も、上側のブロックを優先して破綻を避ける。
             int& existing = childOf[static_cast<size_t>(parent)];
             if (existing < 0 || blocks[i].y < blocks[static_cast<size_t>(existing)].y)
                 existing = static_cast<int>(i);
@@ -531,7 +520,6 @@ namespace
         for (int root : roots)
             if (!appendChain(root)) return false;
 
-        // 親が不正、または接続のない孤立ブロックも落とさない。
         std::vector<int> leftovers;
         for (size_t i = 0; i < count; ++i)
             if (!visited[i]) leftovers.push_back(static_cast<int>(i));
@@ -630,10 +618,10 @@ namespace
             EmitLine(code, indent, "setAdjustRadarForGunTurn(true);");
             break;
         case BlockType::FireBullet:
-            EmitLine(code, indent, "fireSafely(" + power + ");");
+            EmitLine(code, indent, "fire(" + power + ");");
             break;
         case BlockType::FireBulletAndGetResult:
-            EmitLine(code, indent, "fireAndCaptureBullet(" + power + ");");
+            EmitLine(code, indent, "fire(" + power + ");");
             break;
         case BlockType::DoNothing:
             EmitLine(code, indent, "execute();");
@@ -643,7 +631,7 @@ namespace
             double seconds = std::isfinite(b.waitSeconds) ? b.waitSeconds : 0.0;
             seconds = (std::max)(0.0, (std::min)(seconds, 3600.0));
             const long long turns = static_cast<long long>(std::ceil(seconds * 30.0));
-            EmitLine(code, indent, "waitTurns(" + std::to_string(turns) + "L);");
+            EmitLine(code, indent, "for (int i = 0; i < " + std::to_string(turns) + "; i++) { execute(); }");
             break;
         }
         case BlockType::Repeat:
@@ -655,87 +643,67 @@ namespace
             break;
         }
         case BlockType::EndRepeat:
-            // EndRepeat は EmitBlockSequence が対応する Repeat のかっこを閉じる。
             break;
         case BlockType::If:
             EmitLine(code, indent, "if (" + BlockConditionExpression(b, ids) + ") {");
             break;
         case BlockType::Else:
         case BlockType::EndIf:
-            // Else / EndIf は EmitBlockSequence が構造の整合性を確認して出力する。
             break;
+
         case BlockType::CreateVariable:
         case BlockType::SetVariable:
             EmitLine(code, indent, variable + " = " + std::to_string(b.value) + ";");
             break;
         case BlockType::ChangeVariable:
-            if (b.value >= 0)
-                EmitLine(code, indent, variable + " += " + std::to_string(b.value) + ";");
-            else
-                EmitLine(code, indent, variable + " -= " +
-                    std::to_string(-static_cast<long long>(b.value)) + ";");
-            break;
         case BlockType::AddVariable:
             EmitLine(code, indent, variable + " += " + std::to_string(b.value) + ";");
             break;
         case BlockType::SubtractVariable:
-            EmitLine(code, indent, variable + " -= " +
-                std::to_string(b.value) + ";");
+            EmitLine(code, indent, variable + " -= " + std::to_string(b.value) + ";");
             break;
         case BlockType::SetBoolean:
-            EmitLine(code, indent, booleanVariable + " = " +
-                (b.booleanValue ? "true;" : "false;"));
+            EmitLine(code, indent, booleanVariable + " = " + (b.booleanValue ? "true;" : "false;"));
             break;
+
+            // イベント用関数を各ハンドラ内で安全に引数つきで呼び出す
         case BlockType::KeepAwayRadarFire:
-            EmitLine(code, indent, "keepAwayRadarFire();");
+            EmitLine(code, indent, "keepAwayRadarFire(e);");
             break;
         case BlockType::BodyBlowFire:
-            EmitLine(code, indent, "bodyBlowFire();");
+            EmitLine(code, indent, "bodyBlowFire(e);");
             break;
         case BlockType::SmartFire:
-            EmitLine(code, indent, "smartFire();");
+            EmitLine(code, indent, "smartFire(e);");
             break;
         case BlockType::GetAwayFromWall:
-            EmitLine(code, indent, "moveAwayFromNearestWall();");
+            EmitLine(code, indent, "getAwayFromWall(e);");
             break;
         case BlockType::TurnBodyToEnemy:
-            EmitLine(code, indent, "turnBodyToLatestTarget();");
+            EmitLine(code, indent, "turnBodyToEnemy(e);");
             break;
         case BlockType::TurnGunToEnemy:
-            EmitLine(code, indent, "turnGunToLatestTarget();");
+            EmitLine(code, indent, "turnGunToEnemy(e);");
             break;
         case BlockType::HesitateNextBullet:
-            EmitLine(code, indent, "dodgeAfterBulletHit();");
+            EmitLine(code, indent, "hesitateNextBullet(e);");
             break;
+
         case BlockType::OnScannedRobot:
         case BlockType::OnHitWall:
         case BlockType::OnBulletHit:
         case BlockType::OnHitByBullet:
         case BlockType::OnHitRobot:
         case BlockType::OnWin:
-            // Palette/display markers only. They intentionally emit no Java statements.
             break;
+
         case BlockType::VictoryDance:
-        {
-            const std::string danceIndex =
-                "__victoryDanceIndex" + std::to_string(repeatIndex++);
-
-            EmitLine(
-                code,
-                indent,
-                "for (int " + danceIndex + " = 0; " +
-                danceIndex + " < 50; ++" + danceIndex + ") {"
-            );
-
-            EmitLine(code, indent + 1, "turnRight(30);");
-            EmitLine(code, indent + 1, "turnLeft(30);");
-
-            EmitLine(code, indent, "}");
+            EmitLine(code, indent, "victoryDance();");
             break;
-        }
         case BlockType::VictorySpin:
-            EmitLine(code, indent, "turnRight(36000);");
+            EmitLine(code, indent, "victorySpin();");
             break;
+
         case BlockType::SetBodyColor:
             EmitLine(code, indent, "setBodyColor(new Color(" +
                 std::to_string(GetRValue(b.bodyColor)) + ", " +
@@ -766,68 +734,15 @@ namespace
                 std::to_string(GetGValue(b.scanColor)) + ", " +
                 std::to_string(GetBValue(b.scanColor)) + "));");
             break;
-        case BlockType::GetName:
-            EmitLine(code, indent, "printInfo(\"Name\", getName());");
-            break;
-        case BlockType::GetX:
-            EmitLine(code, indent, "printInfo(\"X\", getX());");
-            break;
-        case BlockType::GetY:
-            EmitLine(code, indent, "printInfo(\"Y\", getY());");
-            break;
-        case BlockType::GetEnergy:
-            EmitLine(code, indent, "printInfo(\"Energy\", getEnergy());");
-            break;
-        case BlockType::GetHeading:
-            EmitLine(code, indent, "printInfo(\"Heading\", getHeading());");
-            break;
-        case BlockType::GetGunHeading:
-            EmitLine(code, indent, "printInfo(\"GunHeading\", getGunHeading());");
-            break;
-        case BlockType::GetRadarHeading:
-            EmitLine(code, indent, "printInfo(\"RadarHeading\", getRadarHeading());");
-            break;
-        case BlockType::GetGunCoolingRate:
-            EmitLine(code, indent, "printInfo(\"GunCoolingRate\", getGunCoolingRate());");
-            break;
-        case BlockType::GetGunHeat:
-            EmitLine(code, indent, "printInfo(\"GunHeat\", getGunHeat());");
-            break;
-        case BlockType::GetVelocity:
-            EmitLine(code, indent, "printInfo(\"Velocity\", getVelocity());");
-            break;
-        case BlockType::GetOthers:
-            EmitLine(code, indent, "printInfo(\"Others\", getOthers());");
-            break;
-        case BlockType::GetBattleFieldHeight:
-            EmitLine(code, indent, "printInfo(\"BattleFieldHeight\", getBattleFieldHeight());");
-            break;
-        case BlockType::GetBattleFieldWidth:
-            EmitLine(code, indent, "printInfo(\"BattleFieldWidth\", getBattleFieldWidth());");
-            break;
-        case BlockType::GetHeight:
-            EmitLine(code, indent, "printInfo(\"Height\", getHeight());");
-            break;
-        case BlockType::GetWidth:
-            EmitLine(code, indent, "printInfo(\"Width\", getWidth());");
-            break;
-        case BlockType::GetNumRounds:
-            EmitLine(code, indent, "printInfo(\"NumRounds\", getNumRounds());");
-            break;
-        case BlockType::GetRoundNum:
-            EmitLine(code, indent, "printInfo(\"RoundNum\", getRoundNum());");
-            break;
-        case BlockType::GetTime:
-            EmitLine(code, indent, "printInfo(\"Time\", getTime());");
-            break;
+
         case BlockType::Scan:
-            EmitLine(code, indent, "turnRadarRight(360);");
+            EmitLine(code, indent, "scan();");
             break;
         case BlockType::ForwardBackwardGun360:
-            EmitLine(code, indent, "forwardBackwardGun360();");
+            EmitLine(code, indent, "aheadAndBack();");
             break;
         case BlockType::ZigzagMove:
-            EmitLine(code, indent, "zigzagMove();");
+            EmitLine(code, indent, "limpRunning();");
             break;
         }
     }
@@ -906,7 +821,6 @@ namespace
             EmitOrdinaryBlock(expanded, ids, code, indent, repeatIndex);
         }
 
-        // 閉じブロックの配置ミスがあっても、生成されるJavaの括弧は閉じる。
         while (!structures.empty())
         {
             --indent;
@@ -915,212 +829,115 @@ namespace
         }
     }
 
+    // Sample.java の標準関数定義を出力するヘルパー
     void EmitHelperMethods(std::string& code)
     {
         code +=
-            "    private boolean hasScannedTarget = false;\n"
-            "    private double targetAbsoluteBearing = 0.0;\n"
-            "    private double lastScannedDistance = Double.POSITIVE_INFINITY;\n"
-            "    private long lastScanTime = -1000000L;\n"
-            "    private double lastHitAbsoluteBearing = 0.0;\n"
-            "    private boolean dodgePending = false;\n"
-            "    private Bullet lastFiredBullet = null;\n\n"
-            "    @Override\n"
-            "    public void onScannedRobot(ScannedRobotEvent event)\n"
-            "    {\n"
-            "        hasScannedTarget = true;\n"
-            "        targetAbsoluteBearing = getHeading() + event.getBearing();\n"
-            "        lastScannedDistance = event.getDistance();\n"
-            "        lastScanTime = getTime();\n"
+            "    private void aheadAndBack() {\n"
+            "        ahead(100);\n"
+            "        turnGunRight(360);\n"
+            "        back(100);\n"
+            "        turnGunRight(360);\n"
             "    }\n\n"
-            "    @Override\n"
-            "    public void onHitByBullet(HitByBulletEvent event)\n"
-            "    {\n"
-            "        lastHitAbsoluteBearing = getHeading() + event.getBearing();\n"
-            "        dodgePending = true;\n"
+
+            "    private void limpRunning() {\n"
+            "        setAhead(40000);\n"
+            "        setTurnRight(90);\n"
+            "        waitFor(new TurnCompleteCondition(this));\n"
+            "        setTurnLeft(180);\n"
+            "        waitFor(new TurnCompleteCondition(this));\n"
+            "        setTurnRight(180);\n"
+            "        waitFor(new TurnCompleteCondition(this));\n"
             "    }\n\n"
-            // Avoid java.util.Map/HashMap in generated code. Some older ECJ
-            // setups report java.util.Map$Entry resolution errors when Map is
-            // referenced. Fixed arrays are enough for the known info labels.
-            "    private final String[] lastInfoPrintKeys = new String[32];\n"
-            "    private final long[] lastInfoPrintTurns = new long[32];\n"
-            "    private int lastInfoPrintCount = 0;\n"
-            "    private void printInfo(String key, Object value)\n"
-            "    {\n"
-            "        long now = getTime();\n"
-            "        for (int i = 0; i < lastInfoPrintCount; i++)\n"
-            "        {\n"
-            "            if (lastInfoPrintKeys[i].equals(key))\n"
-            "            {\n"
-            "                if (now - lastInfoPrintTurns[i] >= 30L)\n"
-            "                {\n"
-            "                    out.println(key + \"=\" + value);\n"
-            "                    lastInfoPrintTurns[i] = now;\n"
-            "                }\n"
-            "                return;\n"
+
+            "    private void spinRunning() {\n"
+            "        setTurnRight(10000);\n"
+            "        setMaxVelocity(5);\n"
+            "        ahead(1000);\n"
+            "    }\n\n"
+
+            "    private void keepAwayRadarFire(ScannedRobotEvent e) {\n"
+            "        double absoluteBearing = getHeading() + e.getBearing();\n"
+            "        double bearingFromGun = normalRelativeAngleDegrees(absoluteBearing - getGunHeading());\n"
+            "        if (Math.abs(bearingFromGun) <= 3) {\n"
+            "            turnGunRight(bearingFromGun);\n"
+            "            if (getGunHeat() == 0) {\n"
+            "                fire(Math.min(3 - Math.abs(bearingFromGun), getEnergy() - .1));\n"
             "            }\n"
+            "        } else {\n"
+            "            turnGunRight(bearingFromGun);\n"
             "        }\n"
-            "        if (lastInfoPrintCount < lastInfoPrintKeys.length)\n"
-            "        {\n"
-            "            lastInfoPrintKeys[lastInfoPrintCount] = key;\n"
-            "            lastInfoPrintTurns[lastInfoPrintCount] = now;\n"
-            "            lastInfoPrintCount++;\n"
+            "        if (bearingFromGun == 0) {\n"
+            "            scan();\n"
             "        }\n"
-            "        // If more labels are ever added than the cache can hold, still print them.\n"
-            "        out.println(key + \"=\" + value);\n"
             "    }\n\n"
-            "    private boolean hasRecentTarget()\n"
-            "    {\n"
-            "        return hasScannedTarget && getTime() - lastScanTime <= 20L;\n"
-            "    }\n\n"
-            "    private double getTargetRelativeBearing()\n"
-            "    {\n"
-            "        return robocode.util.Utils.normalRelativeAngleDegrees(targetAbsoluteBearing - getHeading());\n"
-            "    }\n\n"
-            "    private void waitTurns(long turns)\n"
-            "    {\n"
-            "        long endTime = getTime() + Math.max(0L, turns);\n"
-            "        while (getTime() < endTime) execute();\n"
-            "    }\n\n"
-            "    private double safeBulletPower(double requestedPower)\n"
-            "    {\n"
-            "        if (getEnergy() <= 0.1) return 0.0;\n"
-            "        double allowed = Math.min(3.0, Math.max(0.1, requestedPower));\n"
-            "        allowed = Math.min(allowed, getEnergy() - 0.1);\n"
-            "        return allowed >= 0.1 ? allowed : 0.0;\n"
-            "    }\n\n"
-            "    private void queueFireSafely(double requestedPower)\n"
-            "    {\n"
-            "        if (getGunHeat() > 0.0) return;\n"
-            "        double power = safeBulletPower(requestedPower);\n"
-            "        if (power >= 0.1) setFire(power);\n"
-            "    }\n\n"
-            "    private void fireSafely(double requestedPower)\n"
-            "    {\n"
-            "        queueFireSafely(requestedPower);\n"
-            "        execute();\n"
-            "    }\n\n"
-            "    private void fireAndCaptureBullet(double requestedPower)\n"
-            "    {\n"
-            "        lastFiredBullet = null;\n"
-            "        if (getGunHeat() <= 0.0)\n"
-            "        {\n"
-            "            double power = safeBulletPower(requestedPower);\n"
-            "            if (power >= 0.1) lastFiredBullet = fireBullet(power);\n"
-            "        }\n"
-            "        execute();\n"
-            "        printInfo(\"BulletFired\", (lastFiredBullet != null));\n"
-            "    }\n\n"
-            "    private void turnBodyToLatestTarget()\n"
-            "    {\n"
-            "        if (hasRecentTarget()) turnRight(getTargetRelativeBearing());\n"
-            "        else turnRadarRight(360);\n"
-            "    }\n\n"
-            "    private void turnGunToLatestTarget()\n"
-            "    {\n"
-            "        if (hasRecentTarget())\n"
-            "            turnGunRight(robocode.util.Utils.normalRelativeAngleDegrees(targetAbsoluteBearing - getGunHeading()));\n"
-            "        else turnRadarRight(360);\n"
-            "    }\n\n"
-            "    private void keepAwayRadarFire()\n"
-            "    {\n"
-            "        setTurnRadarRight(360);\n"
-            "        if (hasRecentTarget())\n"
-            "        {\n"
-            "            setTurnRight(getTargetRelativeBearing());\n"
-            "            double gunBearing = robocode.util.Utils.normalRelativeAngleDegrees(targetAbsoluteBearing - getGunHeading());\n"
-            "            setTurnGunRight(gunBearing);\n"
-            "            double move = lastScannedDistance > 220.0 ? Math.min(120.0, lastScannedDistance - 160.0) : -100.0;\n"
-            "            setAhead(move);\n"
-            "            if (Math.abs(gunBearing) <= 10.0) queueFireSafely(lastScannedDistance > 400.0 ? 1.0 : (lastScannedDistance > 200.0 ? 2.0 : 3.0));\n"
-            "        }\n"
-            "        else setAhead(50.0);\n"
-            "        execute();\n"
-            "    }\n\n"
-            "    private void bodyBlowFire()\n"
-            "    {\n"
-            "        setTurnRadarRight(360);\n"
-            "        if (hasRecentTarget())\n"
-            "        {\n"
-            "            setTurnRight(getTargetRelativeBearing());\n"
-            "            double gunBearing = robocode.util.Utils.normalRelativeAngleDegrees(targetAbsoluteBearing - getGunHeading());\n"
-            "            setTurnGunRight(gunBearing);\n"
-            "            setAhead(Math.min(150.0, Math.max(-60.0, lastScannedDistance - 80.0)));\n"
-            "            if (Math.abs(gunBearing) <= 10.0) queueFireSafely(3.0);\n"
-            "        }\n"
-            "        else setAhead(50.0);\n"
-            "        execute();\n"
-            "    }\n\n"
-            "    private void smartFire()\n"
-            "    {\n"
-            "        if (!hasRecentTarget())\n"
-            "        {\n"
-            "            setTurnRadarRight(360);\n"
-            "            execute();\n"
+
+            "    private void bodyBlowFire(ScannedRobotEvent e) {\n"
+            "        turnRight(e.getBearing());\n"
+            "        if (getHeading() - getGunHeading() != 0) {\n"
+            "            turnGunRight(getHeading() - getGunHeading());\n"
+            "        } else if (e.getDistance() < 50) {\n"
+            "            fire(3);\n"
+            "            scan();\n"
             "            return;\n"
             "        }\n"
-            "        double gunBearing = robocode.util.Utils.normalRelativeAngleDegrees(targetAbsoluteBearing - getGunHeading());\n"
-            "        setTurnGunRight(gunBearing);\n"
-            "        double desiredPower = lastScannedDistance > 400.0 ? 1.0 : (lastScannedDistance > 200.0 ? 2.0 : 3.0);\n"
-            "        if (Math.abs(gunBearing) <= 10.0) queueFireSafely(desiredPower);\n"
-            "        execute();\n"
+            "        ahead(e.getDistance() + 5);\n"
+            "        scan();\n"
             "    }\n\n"
-            "    private void moveAwayFromNearestWall()\n"
-            "    {\n"
-            "        double margin = 100.0;\n"
-            "        if (getX() < margin || getX() > getBattleFieldWidth() - margin ||\n"
-            "            getY() < margin || getY() > getBattleFieldHeight() - margin)\n"
-            "        {\n"
-            "            double leftDistance = getX();\n"
-            "            double rightDistance = getBattleFieldWidth() - getX();\n"
-            "            double bottomDistance = getY();\n"
-            "            double topDistance = getBattleFieldHeight() - getY();\n"
-            "            double desiredHeading;\n"
-            "            double nearestX = Math.min(leftDistance, rightDistance);\n"
-            "            double nearestY = Math.min(bottomDistance, topDistance);\n"
-            "            if (nearestX < nearestY) desiredHeading = leftDistance < rightDistance ? 90.0 : 270.0;\n"
-            "            else desiredHeading = bottomDistance < topDistance ? 0.0 : 180.0;\n"
-            "            turnRight(robocode.util.Utils.normalRelativeAngleDegrees(desiredHeading - getHeading()));\n"
-            "            ahead(150.0);\n"
+
+            "    private void smartFire(ScannedRobotEvent e) {\n"
+            "        if (e.getDistance() < 50 && getEnergy() > 50) {\n"
+            "            fire(3);\n"
+            "        } else {\n"
+            "            fire(1);\n"
+            "        }\n"
+            "        scan();\n"
+            "    }\n\n"
+
+            "    private void getAwayFromWall(HitWallEvent e) {\n"
+            "        double bearing = e.getBearing();\n"
+            "        if (bearing > -90 && bearing < 90) {\n"
+            "            setBack(200);\n"
+            "        } else {\n"
+            "            setAhead(200);\n"
             "        }\n"
             "    }\n\n"
-            "    private void dodgeAfterBulletHit()\n"
-            "    {\n"
-            "        if (!dodgePending) { execute(); return; }\n"
-            "        double escapeHeading = lastHitAbsoluteBearing + 90.0;\n"
-            "        turnRight(robocode.util.Utils.normalRelativeAngleDegrees(escapeHeading - getHeading()));\n"
-            "        ahead(100.0);\n"
-            "        dodgePending = false;\n"
+
+            "    private void turnFlewBullet(HitByBulletEvent e) {\n"
+            "        turnRight(e.getHeading() - getHeading() + 180);\n"
+            "        turnGunRight(getHeading() - getGunHeading());\n"
+            "        scan();\n"
             "    }\n\n"
-            "    private void forwardBackwardGun360()\n"
-            "    {\n"
-            "        setAdjustGunForRobotTurn(true);\n"
-            "        setTurnGunRight(360.0);\n"
-            "        setAhead(100.0);\n"
-            "        while (getDistanceRemaining() != 0.0) execute();\n"
-            "        setBack(100.0);\n"
-            "        while (getDistanceRemaining() != 0.0) execute();\n"
+
+            "    private void hesitateNextBullet(HitByBulletEvent e) {\n"
+            "        turnRight(normalRelativeAngleDegrees(90 - (getHeading() - e.getHeading())));\n"
+            "        ahead(100);\n"
             "    }\n\n"
-            "    private void zigzagMove()\n"
-            "    {\n"
-            "        turnRight(45.0);\n"
-            "        ahead(100.0);\n"
-            "        turnLeft(90.0);\n"
-            "        ahead(100.0);\n"
-            "        turnRight(45.0);\n"
+
+            "    private void turnBodyToEnemy(HitRobotEvent e) {\n"
+            "        double turnAmt = normalRelativeAngleDegrees(e.getBearing() + getHeading() - getGunHeading());\n"
+            "        turnRight(turnAmt);\n"
+            "        if (getHeading() - getGunHeading() != 0) {\n"
+            "            turnGunRight(getHeading() - getGunHeading());\n"
+            "        }\n"
+            "        scan();\n"
             "    }\n\n"
-            "    private void performVictoryDance()\n"
-            "    {\n"
-            "        setBodyColor(Color.YELLOW);\n"
-            "        setGunColor(Color.RED);\n"
-            "        setRadarColor(Color.GREEN);\n"
-            "        turnRight(360.0);\n"
+
+            "    private void turnGunToEnemy(HitRobotEvent e) {\n"
+            "        double turnAmt = normalRelativeAngleDegrees(e.getBearing() + getHeading() - getGunHeading());\n"
+            "        turnGunRight(turnAmt);\n"
+            "        scan();\n"
             "    }\n\n"
-            "    private void performVictorySpin()\n"
-            "    {\n"
-            "        turnRight(360.0);\n"
-            "        turnGunRight(360.0);\n"
-            "        turnRadarRight(360.0);\n"
+
+            "    private void victoryDance() {\n"
+            "        for (int i = 0; i < 50; i++) {\n"
+            "            turnRight(30);\n"
+            "            turnLeft(30);\n"
+            "        }\n"
+            "    }\n\n"
+
+            "    private void victorySpin() {\n"
+            "        turnRight(36000);\n"
             "    }\n\n";
     }
 
@@ -1208,7 +1025,6 @@ bool ExportJavaCustom(
     const std::wstring& robotName,
     const std::vector<UserDefinedFunction>& functions)
 {
-    // 互換版。メイン画面からは親子関係も渡す6引数版を使うこと。
     return ExportJavaCustom(
         blocks,
         std::vector<int>{},
@@ -1271,16 +1087,52 @@ bool ExportJavaCustom(
         return false;
     }
 
-    // 勝利演出ブロックは通常の run() ではなく onWin() に出力する。
+    // ★案2：ブロックの種類に応じて、それぞれのメソッド用リストへ自動振り分けを行う
     std::vector<ExpandedBlock> runBlocks;
+    std::vector<ExpandedBlock> scannedRobotBlocks;
+    std::vector<ExpandedBlock> hitWallBlocks;
+    std::vector<ExpandedBlock> hitByBulletBlocks;
+    std::vector<ExpandedBlock> hitRobotBlocks;
     std::vector<ExpandedBlock> winBlocks;
+
     for (const ExpandedBlock& item : expanded)
     {
-        if (!item.syntheticRepeatEnd &&
-            (item.block.type == BlockType::VictoryDance || item.block.type == BlockType::VictorySpin))
-            winBlocks.push_back(item);
+        if (!item.syntheticRepeatEnd)
+        {
+            if (item.block.type == BlockType::KeepAwayRadarFire ||
+                item.block.type == BlockType::BodyBlowFire ||
+                item.block.type == BlockType::SmartFire)
+            {
+                scannedRobotBlocks.push_back(item);
+            }
+            else if (item.block.type == BlockType::GetAwayFromWall)
+            {
+                hitWallBlocks.push_back(item);
+            }
+            else if (item.block.type == BlockType::HesitateNextBullet)
+            {
+                hitByBulletBlocks.push_back(item);
+            }
+            else if (item.block.type == BlockType::TurnBodyToEnemy ||
+                item.block.type == BlockType::TurnGunToEnemy)
+            {
+                hitRobotBlocks.push_back(item);
+            }
+            else if (item.block.type == BlockType::VictoryDance ||
+                item.block.type == BlockType::VictorySpin)
+            {
+                winBlocks.push_back(item);
+            }
+            else
+            {
+                runBlocks.push_back(item);
+            }
+        }
         else
+        {
+            // repeat などの閉じタグは runBlocks にフォールバック
             runBlocks.push_back(item);
+        }
     }
 
     const JavaIdentifiers identifiers = BuildJavaIdentifiers(expanded);
@@ -1290,13 +1142,14 @@ bool ExportJavaCustom(
 
     code +=
         "import robocode.*;\n"
-        "import java.awt.Color;\n\n"
+        "import java.awt.Color;\n"
+        "import static robocode.util.Utils.normalRelativeAngleDegrees;\n\n"
         "public class " + className + " extends AdvancedRobot\n"
         "{\n";
 
     EmitVariableFields(code, identifiers);
-    EmitHelperMethods(code);
 
+    // 1. run() メソッドの出力
     code +=
         "    @Override\n"
         "    public void run()\n"
@@ -1309,21 +1162,53 @@ bool ExportJavaCustom(
         "        }\n"
         "    }\n\n";
 
-    if (!winBlocks.empty())
-    {
-        code +=
-            "    @Override\n"
-            "    public void onWin(WinEvent event)\n"
-            "    {\n";
-        for (const ExpandedBlock& item : winBlocks)
-        {
-            if (item.block.type == BlockType::VictoryDance)
-                EmitLine(code, 2, "performVictoryDance();");
-            else if (item.block.type == BlockType::VictorySpin)
-                EmitLine(code, 2, "performVictorySpin();");
-        }
-        code += "    }\n\n";
-    }
+    // 2. onScannedRobot メソッドの出力
+    code +=
+        "    @Override\n"
+        "    public void onScannedRobot(ScannedRobotEvent e)\n"
+        "    {\n";
+    EmitBlockSequence(scannedRobotBlocks, identifiers, code, 2);
+    code += "    }\n\n";
+
+    // 3. onHitWall メソッドの出力
+    code +=
+        "    @Override\n"
+        "    public void onHitWall(HitWallEvent e)\n"
+        "    {\n";
+    EmitBlockSequence(hitWallBlocks, identifiers, code, 2);
+    code += "    }\n\n";
+
+    // 4. onBulletHit メソッドの出力
+    code +=
+        "    @Override\n"
+        "    public void onBulletHit(BulletHitEvent e) {}\n\n";
+
+    // 5. onHitByBullet メソッドの出力
+    code +=
+        "    @Override\n"
+        "    public void onHitByBullet(HitByBulletEvent e)\n"
+        "    {\n";
+    EmitBlockSequence(hitByBulletBlocks, identifiers, code, 2);
+    code += "    }\n\n";
+
+    // 6. onHitRobot メソッドの出力
+    code +=
+        "    @Override\n"
+        "    public void onHitRobot(HitRobotEvent e)\n"
+        "    {\n";
+    EmitBlockSequence(hitRobotBlocks, identifiers, code, 2);
+    code += "    }\n\n";
+
+    // 7. onWin メソッドの出力
+    code +=
+        "    @Override\n"
+        "    public void onWin(WinEvent e)\n"
+        "    {\n";
+    EmitBlockSequence(winBlocks, identifiers, code, 2);
+    code += "    }\n\n";
+
+    // サンプル互換のヘルパー関数群を出力[cite: 2]
+    EmitHelperMethods(code);
 
     code += "}\n";
 
@@ -1331,8 +1216,7 @@ bool ExportJavaCustom(
     std::filesystem::create_directories(dirPath, ec);
     if (ec)
     {
-        MessageBoxW(nullptr, L"保存先フォルダを作成できませんでした。フォルダの場所を確認してください。",
-            L"保存エラー", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, L"保存先フォルダを作成できませんでした。", L"保存エラー", MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -1340,15 +1224,13 @@ bool ExportJavaCustom(
         std::ofstream file(javaPath, std::ios::binary | std::ios::trunc);
         if (!file.is_open())
         {
-            MessageBoxW(nullptr, L"Javaファイルを保存できませんでした。保存先とアクセス権を確認してください。",
-                L"保存エラー", MB_OK | MB_ICONERROR);
+            MessageBoxW(nullptr, L"Javaファイルを保存できませんでした。", L"保存エラー", MB_OK | MB_ICONERROR);
             return false;
         }
         file.write(code.data(), static_cast<std::streamsize>(code.size()));
         if (!file)
         {
-            MessageBoxW(nullptr, L"Javaファイルの書き込み中にエラーが発生しました。",
-                L"保存エラー", MB_OK | MB_ICONERROR);
+            MessageBoxW(nullptr, L"Javaファイルの書き込み中にエラーが発生しました。", L"保存エラー", MB_OK | MB_ICONERROR);
             return false;
         }
     }
