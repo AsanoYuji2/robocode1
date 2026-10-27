@@ -139,8 +139,11 @@ void DrawCustomButton(
     RECT rc = dis->rcItem;
 
     HBRUSH brush = CreateSolidBrush(color);
-    FillRect(hdc, &rc, brush);
-    DeleteObject(brush);
+    if (brush)
+    {
+        FillRect(hdc, &rc, brush);
+        DeleteObject(brush);
+    }
 
     HBRUSH borderBrush =
         CreateSolidBrush(RGB(220, 220, 220));
