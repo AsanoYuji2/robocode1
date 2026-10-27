@@ -6,7 +6,35 @@
 #include <vector>
 #include "BlockColors.h"
 
-namespace { constexpr int SNAP_DISTANCE = 24; constexpr int COLUMN_DISTANCE = 35; constexpr int TAB_HEIGHT = 8; constexpr int SELECTION_PADDING = 6; constexpr int MAX_HISTORY = 100; }
+namespace
+{
+    constexpr int SNAP_DISTANCE = 24;
+    constexpr int COLUMN_DISTANCE = 35;
+    constexpr int TAB_HEIGHT = 8;
+    constexpr int SELECTION_PADDING = 6;
+    constexpr int MAX_HISTORY = 100;
+
+    // Block.cpp draws these blocks wider than their default Block::w.
+    // Use the same effective width when calculating a range selection.
+    int GetRangeSelectionWidth(const Block& block)
+    {
+        switch (block.type)
+        {
+        case BlockType::SmartFire:
+        case BlockType::ForwardBackwardGun360:
+        case BlockType::SetAdjustGunForRobotTurn:
+        case BlockType::SetAdjustRadarForRobotTurn:
+        case BlockType::SetAdjustRadarForGunTurn:
+        case BlockType::GetBattleFieldHeight:
+        case BlockType::GetBattleFieldWidth:
+        case BlockType::TurnRadarRight:
+        case BlockType::TurnRadarLeft:
+            return (std::max)(block.w, 250);
+        default:
+            return block.w;
+        }
+    }
+}
 
 // ============================================================
 // 初期化
@@ -190,7 +218,10 @@ void BlockManager::DrawAll(HDC hdc) const
         if (blocks[i].type != BlockType::Repeat)
             continue;
 
-        bool glowing = (i == hoveredIndex);
+        const bool isSelected =
+            i == selected ||
+            std::find(selectedBlocks.begin(), selectedBlocks.end(), i) != selectedBlocks.end();
+        bool glowing = (i == hoveredIndex) || isSelected;
 
         if (dragging &&
             std::find(
@@ -212,7 +243,10 @@ void BlockManager::DrawAll(HDC hdc) const
         if (blocks[i].type == BlockType::Repeat)
             continue;
 
-        bool glowing = (i == hoveredIndex);
+        const bool isSelected =
+            i == selected ||
+            std::find(selectedBlocks.begin(), selectedBlocks.end(), i) != selectedBlocks.end();
+        bool glowing = (i == hoveredIndex) || isSelected;
 
         if (dragging &&
             std::find(
@@ -281,6 +315,8 @@ void BlockManager::DrawAll(HDC hdc) const
 
 void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
 {
+    mouseX = x;
+    mouseY = y;
     POINT world = ScreenToWorld(x, y);
 
     if (deleteMode)
@@ -440,36 +476,64 @@ void BlockManager::OnMouseMove(int x, int y)
     {
         SaveUndoState();
 
-        if (selectedBlocks.empty())
+        // dragBlocks は実際に一緒に動かすブロック一覧です。
+        // 範囲選択のときは選択範囲、通常のドラッグでは選択ブロックと
+        // その下につながるブロックが入っています。
+        std::vector<bool> moving(blocks.size(), false);
+        for (int index : dragBlocks)
         {
-            // ========================================
-            // Repeat の内側からドラッグして外す場合、
-            // repeatBody の接続情報も解除する
-            // ========================================
-            for (int i = 0;
-                i < static_cast<int>(blocks.size());
-                ++i)
+            if (index >= 0 && index < static_cast<int>(blocks.size()))
+                moving[static_cast<size_t>(index)] = true;
+        }
+        if (selected >= 0 && selected < static_cast<int>(blocks.size()))
+            moving[static_cast<size_t>(selected)] = true;
+
+        // 1) 動かす側の親が範囲外なら、その接続を切る。
+        // 範囲内同士の親子関係はそのまま残す。
+        for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
+        {
+            if (!moving[static_cast<size_t>(i)])
+                continue;
+
+            const int p = parent[static_cast<size_t>(i)];
+            if (p >= 0 && p < static_cast<int>(blocks.size()) &&
+                !moving[static_cast<size_t>(p)])
             {
-                if (blocks[i].type != BlockType::Repeat)
-                    continue;
-
-                if (i >= static_cast<int>(repeatBody.size()))
-                    continue;
-
-                // 選択したブロックが内側の先頭なら、
-                // Repeat と選択ブロックの接続を解除
-                if (repeatBody[i] == selected)
-                {
-                    repeatBody[i] = -1;
-                }
+                parent[static_cast<size_t>(i)] = -1;
             }
+        }
 
-            // 選択したブロックの親との接続を解除
-            if (selected >= 0 &&
-                selected < static_cast<int>(parent.size()))
+        // 2) 動かさない側が、動かす側を親にしている場合も切る。
+        // これで選択グループを元の場所から完全に切り離せる。
+        for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
+        {
+            if (moving[static_cast<size_t>(i)])
+                continue;
+
+            const int p = parent[static_cast<size_t>(i)];
+            if (p >= 0 && p < static_cast<int>(blocks.size()) &&
+                moving[static_cast<size_t>(p)])
             {
-                parent[selected] = -1;
+                parent[static_cast<size_t>(i)] = -1;
             }
+        }
+
+        // 3) Repeat ブロックと内側の先頭ブロックの接続も、
+        // 片方だけを移動するときは解除する。両方を動かすときは維持。
+        for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
+        {
+            if (blocks[static_cast<size_t>(i)].type != BlockType::Repeat ||
+                i >= static_cast<int>(repeatBody.size()))
+                continue;
+
+            const int body = repeatBody[static_cast<size_t>(i)];
+            if (body < 0 || body >= static_cast<int>(blocks.size()))
+                continue;
+
+            const bool repeatMoves = moving[static_cast<size_t>(i)];
+            const bool bodyMoves = moving[static_cast<size_t>(body)];
+            if (repeatMoves != bodyMoves)
+                repeatBody[static_cast<size_t>(i)] = -1;
         }
 
         dragStarted = true;
@@ -682,24 +746,79 @@ void BlockManager::SnapSelectedBlock()
         return;
 
     // ========================================
-    // ① 移動するブロックのかたまりを収集
+    // ① 移動グループを収集
     // ========================================
     std::vector<int> movingBlocks;
-    std::vector<bool> isMoving(count, false);
+    std::vector<bool> isMoving(static_cast<size_t>(count), false);
 
-    int current = selected;
-
-    for (int step = 0;
-        current >= 0 && current < count && step < count;
-        ++step)
+    if (selectedBlocks.size() > 1)
     {
-        if (isMoving[current])
-            break;
+        // 範囲選択中は selected (先頭1個) だけではなく、
+        // selectedBlocks 全体を移動グループとして扱う。
+        for (int index : selectedBlocks)
+        {
+            if (index >= 0 && index < count && !isMoving[static_cast<size_t>(index)])
+            {
+                isMoving[static_cast<size_t>(index)] = true;
+                movingBlocks.push_back(index);
+            }
+        }
 
-        movingBlocks.push_back(current);
-        isMoving[current] = true;
+        if (movingBlocks.empty())
+            return;
 
-        current = GetChild(current);
+        // 親がグループ外にないブロックが、このグループの先頭候補。
+        // 接続していない複数のグループを選んでいる場合は、誤った接続を
+        // 作らないようにスナップ接続を行わない。
+        int root = -1;
+        int rootCount = 0;
+        for (int index : movingBlocks)
+        {
+            const int p = parent[static_cast<size_t>(index)];
+            if (p < 0 || p >= count || !isMoving[static_cast<size_t>(p)])
+            {
+                root = index;
+                ++rootCount;
+            }
+        }
+        if (rootCount != 1)
+            return;
+
+        std::vector<int> orderedChain;
+        std::vector<bool> visited(static_cast<size_t>(count), false);
+        int current = root;
+        while (current >= 0 && current < count &&
+            isMoving[static_cast<size_t>(current)] &&
+            !visited[static_cast<size_t>(current)])
+        {
+            visited[static_cast<size_t>(current)] = true;
+            orderedChain.push_back(current);
+            const int child = GetChild(current);
+            if (child < 0 || child >= count || !isMoving[static_cast<size_t>(child)])
+                break;
+            current = child;
+        }
+
+        // 範囲内に独立したブロックが混ざっているなら、全体を1つの
+        // 接続グループとみなさず、位置をそのまま保つ。
+        if (orderedChain.size() != movingBlocks.size())
+            return;
+        movingBlocks.swap(orderedChain);
+    }
+    else
+    {
+        int current = selected;
+        for (int step = 0;
+            current >= 0 && current < count && step < count;
+            ++step)
+        {
+            if (isMoving[static_cast<size_t>(current)])
+                break;
+
+            movingBlocks.push_back(current);
+            isMoving[static_cast<size_t>(current)] = true;
+            current = GetChild(current);
+        }
     }
 
     if (movingBlocks.empty())
@@ -795,12 +914,58 @@ void BlockManager::SnapSelectedBlock()
     int bestDistance = SNAP_DISTANCE + 1;
     int bestSide = -1;
 
+    // ========================================
+// ③-A-1 ブロック同士が重なっている場合
+//     接続先の下に挿入する候補として優先する
+// ========================================
+    for (int i = 0; i < count; ++i)
+    {
+        if (isMoving[static_cast<size_t>(i)])
+            continue;
+
+        const Block& target = blocks[static_cast<size_t>(i)];
+        const Block& first = blocks[static_cast<size_t>(firstBlock)];
+
+        const int targetWidth = GetRangeSelectionWidth(target);
+        const int firstWidth = GetRangeSelectionWidth(first);
+
+        const int targetHeight = (std::max)(
+            target.h,
+            target.type == BlockType::Repeat ? 120 : target.h);
+
+        const int firstHeight = (std::max)(
+            first.h,
+            first.type == BlockType::Repeat ? 120 : first.h);
+
+        // CとAの矩形が重なっているか判定する
+        const bool overlaps =
+            first.x < target.x + targetWidth &&
+            first.x + firstWidth > target.x &&
+            first.y < target.y + targetHeight &&
+            first.y + firstHeight > target.y;
+
+        if (!overlaps)
+            continue;
+
+        // Aに既存の子Bがあっても、Aの下へCを挿入する。
+        // 通常の接続候補より優先するため、距離を0にする。
+        bestTarget = i;
+        bestDistance = 0;
+        bestSide = 0;
+        break;
+    }
+
     // 0 = 移動グループを接続先の下に挿入
     // 1 = 接続先を移動グループの下につなぐ
     for (int i = 0; i < count; ++i)
     {
         if (isMoving[i])
             continue;
+
+        // 重なりによる挿入候補が見つかっている場合、
+        // それより優先度の低い通常候補は調べない。
+        if (bestDistance == 0)
+            break;
 
         const Block& target = blocks[i];
 
@@ -1300,6 +1465,7 @@ void BlockManager::DeleteBlocks(const std::vector<int>& indices) {
 
     std::vector<Block> newBlocks;
     std::vector<int> newParents;
+    std::vector<int> newRepeatBodies;
 
     std::vector<int> indexMap(blocks.size(), -1);
 
@@ -1307,37 +1473,37 @@ void BlockManager::DeleteBlocks(const std::vector<int>& indices) {
         i < static_cast<int>(blocks.size());
         ++i)
     {
-        if (!remove[i])
+        if (!remove[static_cast<size_t>(i)])
         {
-            indexMap[i] = static_cast<int>(newBlocks.size());
-            newBlocks.push_back(blocks[i]);
-            newParents.push_back(parent[i]);
+            indexMap[static_cast<size_t>(i)] = static_cast<int>(newBlocks.size());
+            newBlocks.push_back(blocks[static_cast<size_t>(i)]);
+            newParents.push_back(parent[static_cast<size_t>(i)]);
+            newRepeatBodies.push_back(
+                i < static_cast<int>(repeatBody.size())
+                ? repeatBody[static_cast<size_t>(i)] : -1);
         }
     }
 
-    for (int i = 0;
-        i < static_cast<int>(newParents.size());
-        ++i)
+    for (int i = 0; i < static_cast<int>(newParents.size()); ++i)
     {
-        int oldParent = newParents[i];
-
-        if (oldParent < 0 ||
-            oldParent >= static_cast<int>(indexMap.size()))
-        {
-            newParents[i] = -1;
-        }
-        else if (remove[oldParent])
-        {
-            newParents[i] = -1;
-        }
+        const int oldParent = newParents[static_cast<size_t>(i)];
+        if (oldParent < 0 || oldParent >= static_cast<int>(indexMap.size()) ||
+            remove[static_cast<size_t>(oldParent)])
+            newParents[static_cast<size_t>(i)] = -1;
         else
-        {
-            newParents[i] = indexMap[oldParent];
-        }
+            newParents[static_cast<size_t>(i)] = indexMap[static_cast<size_t>(oldParent)];
+
+        const int oldBody = newRepeatBodies[static_cast<size_t>(i)];
+        if (oldBody < 0 || oldBody >= static_cast<int>(indexMap.size()) ||
+            remove[static_cast<size_t>(oldBody)])
+            newRepeatBodies[static_cast<size_t>(i)] = -1;
+        else
+            newRepeatBodies[static_cast<size_t>(i)] = indexMap[static_cast<size_t>(oldBody)];
     }
 
     blocks = newBlocks;
     parent = newParents;
+    repeatBody = newRepeatBodies;
 
     ClearSelection();
 
@@ -1368,35 +1534,40 @@ void BlockManager::UpdateRangeSelection(int x, int y) {
 
     selectionEnd = { x, y };
 
-    int left = (std::min)(selectionStart.x, selectionEnd.x);
-    int top = (std::min)(selectionStart.y, selectionEnd.y);
-    int right = (std::max)(selectionStart.x, selectionEnd.x);
-    int bottom = (std::max)(selectionStart.y, selectionEnd.y);
+    const int left = (std::min)(selectionStart.x, selectionEnd.x);
+    const int top = (std::min)(selectionStart.y, selectionEnd.y);
+    // +1 makes a very thin drag still a valid selection rectangle.
+    const int right = (std::max)(selectionStart.x, selectionEnd.x) + 1;
+    const int bottom = (std::max)(selectionStart.y, selectionEnd.y) + 1;
 
     selectedBlocks.clear();
 
-    // 矩形に交差するブロックをすべて選択
-    for (int i = 0;
-        i < static_cast<int>(blocks.size());
-        ++i)
+    // Drawn width differs from Block::w for some wide blocks, so use the
+    // same effective width that the renderer uses. Collect ALL intersections.
+    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
     {
-        const Block& block = blocks[i];
+        const Block& block = blocks[static_cast<size_t>(i)];
+        const int width = GetRangeSelectionWidth(block);
+        const int height = (std::max)(block.h, block.type == BlockType::Repeat ? 120 : block.h);
 
-        bool intersects =
+        const bool intersects =
             block.x < right &&
-            block.x + block.w > left &&
+            block.x + width > left &&
             block.y < bottom &&
-            block.y + block.h > top;
+            block.y + height > top;
 
         if (intersects)
             selectedBlocks.push_back(i);
     }
 
-    selected = selectedBlocks.empty()
-        ? -1
-        : selectedBlocks.front();
+    // Stable index order makes keyboard operations, dragging and deletion
+    // operate on the same complete selection each time.
+    std::sort(selectedBlocks.begin(), selectedBlocks.end());
+    selectedBlocks.erase(
+        std::unique(selectedBlocks.begin(), selectedBlocks.end()),
+        selectedBlocks.end());
 
-
+    selected = selectedBlocks.empty() ? -1 : selectedBlocks.front();
 }
 
 void BlockManager::EndRangeSelection() { selectingRange = false; }
@@ -1558,6 +1729,7 @@ void BlockManager::SaveUndoState() {
 
     state.blocks = blocks;
     state.parent = parent;
+    state.repeatBody = repeatBody;
 
     PushUndoState(state);
 
@@ -1577,6 +1749,7 @@ bool BlockManager::Undo() {
 
     current.blocks = blocks;
     current.parent = parent;
+    current.repeatBody = repeatBody;
 
     redoStack.push_back(current);
 
@@ -1585,6 +1758,7 @@ bool BlockManager::Undo() {
 
     blocks = previous.blocks;
     parent = previous.parent;
+    repeatBody = previous.repeatBody;
 
     ClearSelection();
 
@@ -1604,6 +1778,7 @@ bool BlockManager::Redo() {
 
     current.blocks = blocks;
     current.parent = parent;
+    current.repeatBody = repeatBody;
 
     PushUndoState(current);
 
@@ -1612,6 +1787,7 @@ bool BlockManager::Redo() {
 
     blocks = next.blocks;
     parent = next.parent;
+    repeatBody = next.repeatBody;
 
     ClearSelection();
 

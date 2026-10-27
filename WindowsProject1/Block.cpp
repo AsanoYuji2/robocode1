@@ -35,52 +35,48 @@ COLORREF GetBlockColor(BlockType type)
 {
     switch (type)
     {
-        // 移動・旋回系
+        // Movement
     case BlockType::Move:
     case BlockType::MoveRight:
     case BlockType::MoveLeft:
     case BlockType::MoveBackward:
+    case BlockType::GetAwayFromWall:
+    case BlockType::ZigzagMove:
+        return RGB(65, 150, 230);
+
+        // Rotation and aiming
     case BlockType::TurnRight:
     case BlockType::TurnLeft:
-    case BlockType::Stop:
-    case BlockType::Resume:
-    case BlockType::GetAwayFromWall:
-    case BlockType::TurnBodyToEnemy:
-    case BlockType::HesitateNextBullet:
-        return RGB(52, 120, 212);
-
-        // 砲塔・レーダー系
     case BlockType::TurnGunRight:
     case BlockType::TurnGunLeft:
     case BlockType::TurnRadarRight:
     case BlockType::TurnRadarLeft:
-    case BlockType::SetAdjustGunForRobotTurn:
-    case BlockType::SetAdjustRadarForRobotTurn:
-    case BlockType::SetAdjustRadarForGunTurn:
+    case BlockType::TurnBodyToEnemy:
     case BlockType::TurnGunToEnemy:
-        return RGB(80, 100, 200);
+    case BlockType::ForwardBackwardGun360:
+        return RGB(120, 120, 130);
 
-        // 攻撃系
+        // Attack and combat helpers
     case BlockType::FireBullet:
+    case BlockType::FireBulletAndGetResult:
     case BlockType::KeepAwayRadarFire:
     case BlockType::BodyBlowFire:
     case BlockType::SmartFire:
+    case BlockType::HesitateNextBullet:
+    case BlockType::Scan:
         return RGB(218, 133, 39);
 
-        // 待機・制御系
+        // Control
     case BlockType::DoNothing:
     case BlockType::Wait:
-        return RGB(100, 150, 150);
-
-        // 繰り返し・条件分岐系
     case BlockType::Repeat:
     case BlockType::EndRepeat:
     case BlockType::If:
     case BlockType::Else:
     case BlockType::EndIf:
-        return RGB(220, 154, 40);
+        return RGB(235, 165, 45);
 
-        // 変数系
+        // Variables
     case BlockType::CreateVariable:
     case BlockType::SetVariable:
     case BlockType::ChangeVariable:
@@ -89,20 +85,29 @@ COLORREF GetBlockColor(BlockType type)
     case BlockType::SetBoolean:
         return RGB(190, 70, 120);
 
-        // 勝利時の動作
+        // Function palette entries and user-function calls
+    case BlockType::OnScannedRobot:
+    case BlockType::OnHitWall:
+    case BlockType::OnBulletHit:
+    case BlockType::OnHitByBullet:
+    case BlockType::OnHitRobot:
+    case BlockType::OnWin:
+        return RGB(220, 90, 150);
+
+        // Victory-related actions
     case BlockType::VictoryDance:
     case BlockType::VictorySpin:
         return RGB(200, 170, 40);
 
-        // 色変更系
+        // Robot colors
     case BlockType::SetBodyColor:
     case BlockType::SetGunColor:
     case BlockType::SetRadarColor:
     case BlockType::SetBulletColor:
     case BlockType::SetScanColor:
-        return RGB(150, 100, 180);
+        return RGB(200, 90, 90);
 
-        // ゲーム情報取得系
+        // Information getters
     case BlockType::GetName:
     case BlockType::GetX:
     case BlockType::GetY:
@@ -123,20 +128,17 @@ COLORREF GetBlockColor(BlockType type)
     case BlockType::GetTime:
         return RGB(60, 150, 90);
 
-        // 特殊行動系
-    case BlockType::FireBulletAndGetResult:
-    case BlockType::Scan:
-        return RGB(180, 100, 50);
-
-        // 関数系
-    case BlockType::ForwardBackwardGun360:
-    case BlockType::ZigzagMove:
-        return RGB(120, 80, 180);
+        // System configuration
+    case BlockType::Stop:
+    case BlockType::Resume:
+    case BlockType::SetAdjustGunForRobotTurn:
+    case BlockType::SetAdjustRadarForRobotTurn:
+    case BlockType::SetAdjustRadarForGunTurn:
+        return RGB(130, 100, 200);
     }
 
     return RGB(100, 100, 100);
 }
-
 
 
 // ============================================================
@@ -310,11 +312,11 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::TurnRight:
         return L"右に旋回 " +
-            FormatNumber(b.degrees) + L" 度";
+            FormatNumber(b.degrees) + L"     度";
 
     case BlockType::TurnLeft:
         return L"左に旋回 " +
-            FormatNumber(b.degrees) + L" 度";
+            FormatNumber(b.degrees) + L"     度";
 
     case BlockType::MoveRight:
         return L"右に移動  " +
@@ -330,14 +332,14 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::Repeat:
         return L"繰り返す  " +
-            std::to_wstring(b.repeatCount) + L"  回";
+            std::to_wstring(b.repeatCount) + L" 回";
 
     case BlockType::EndRepeat:
         return L"繰り返しここまで";
 
     case BlockType::Wait:
         return L"指定秒数待つ " +
-            FormatNumber(b.waitSeconds) + L"秒";
+            FormatNumber(b.waitSeconds) + L" 秒";
 
     case BlockType::If:
         switch (b.condition)
@@ -602,6 +604,20 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::ZigzagMove:
         return L"左右にジグザグ移動する";
+
+        // Java callback names shown in the Function palette. These are display-only markers.
+    case BlockType::OnScannedRobot:
+        return L"onScannedRobot()";
+    case BlockType::OnHitWall:
+        return L"onHitWall()";
+    case BlockType::OnBulletHit:
+        return L"onBulletHit()";
+    case BlockType::OnHitByBullet:
+        return L"onHitByBullet()";
+    case BlockType::OnHitRobot:
+        return L"onHitRobot()";
+    case BlockType::OnWin:
+        return L"onWin()";
     }
 
     return L"不明";
@@ -671,8 +687,11 @@ static bool IsWideBlock(BlockType type)
 
 bool HitBlock(const Block& b, int x, int y)
 {
+    // DrawBlock() renders wide blocks at 250 px. The hitbox must use that
+    // same width; otherwise clicking a visible selected wide block can miss
+    // it and the editor treats the click as the start of a new range select.
     const int hitWidth = IsWideBlock(b.type)
-        ? (std::max)(b.w, 100)
+        ? (std::max)(b.w, 250)
         : b.w;
 
     return
@@ -704,7 +723,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     // ブロックの色
     // ========================================================
     COLORREF blockColor = IsUserFunctionCall(b)
-        ? RGB(150, 85, 205)
+        ? RGB(220, 90, 150)
         : GetBlockCategoryColor(b.type);
 
     if (glowing)
@@ -714,7 +733,12 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     if (!brush)
         return;
 
-    HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+    HPEN pen = CreatePen(
+        PS_SOLID,
+        1,
+        RGB(255, 255, 255)
+    );
+
     if (!pen)
     {
         DeleteObject(brush);
@@ -742,38 +766,31 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
         POINT points[] =
         {
-            // 上側の接続用タブ
             { x, y },
             { x + tabX, y },
             { x + tabX, y + tabH },
             { x + tabX + tabW, y + tabH },
             { x + tabX + tabW, y },
 
-            // 上側の外枠
             { x + w, y },
             { x + w, y + headerH },
 
-            // 内側の左壁
             { x + wallW, y + headerH },
             { x + wallW, y + h - bottomH },
 
-            // 下側の中身のへこみ
             { x + wallW + 24, y + h - bottomH },
             { x + wallW + 24, y + h - bottomH + 8 },
             { x + wallW + 64, y + h - bottomH + 8 },
             { x + wallW + 64, y + h - bottomH },
 
-            // 下側の横棒の右端
             { x + w, y + h - bottomH },
             { x + w, y + h },
 
-            // 下側の接続用タブ
             { x + tabX + tabW, y + h },
             { x + tabX + tabW, y + h + tabH },
             { x + tabX, y + h + tabH },
             { x + tabX, y + h },
 
-            // 左側の外枠
             { x, y + h }
         };
 
@@ -784,7 +801,8 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         );
 
         // 内側を背景色で塗る
-        HBRUSH bgBrush = CreateSolidBrush(RGB(245, 245, 245));
+        HBRUSH bgBrush =
+            CreateSolidBrush(RGB(245, 245, 245));
 
         if (bgBrush)
         {
@@ -815,14 +833,18 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             sizeof(innerTab) / sizeof(innerTab[0])
         );
 
-        // ブロック名
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(255, 255, 255));
 
-        const std::wstring repeatName =
-            L"繰り返し " + std::to_wstring(b.repeatCount) + L" 回";
+       
 
-        RECT textRect =
+        const std::wstring repeatPrefix = L"繰り返し ";
+        const std::wstring repeatNumber =
+            std::to_wstring(b.repeatCount);
+        const std::wstring repeatSuffix = L" 回";
+
+        // 「繰り返し」の文字を描画
+        RECT repeatTextRect =
         {
             x + 12,
             y + 8,
@@ -832,14 +854,109 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
 
         DrawTextW(
             hdc,
-            repeatName.c_str(),
+            repeatPrefix.c_str(),
             -1,
-            &textRect,
-            DT_LEFT | DT_VCENTER |
-            DT_SINGLELINE | DT_END_ELLIPSIS
+            &repeatTextRect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE
         );
 
-        // GDIオブジェクトを元に戻して解放
+        // 数値の位置と幅を計算
+        SIZE prefixSize{};
+        SIZE numberSize{};
+
+        GetTextExtentPoint32W(
+            hdc,
+            repeatPrefix.c_str(),
+            static_cast<int>(repeatPrefix.size()),
+            &prefixSize
+        );
+
+        GetTextExtentPoint32W(
+            hdc,
+            repeatNumber.c_str(),
+            static_cast<int>(repeatNumber.size()),
+            &numberSize
+        );
+
+        const int boxLeft = x + 12 + prefixSize.cx;
+        const int boxWidth = (std::max)(
+            static_cast<int>(numberSize.cx) + 4,
+            30
+            );
+
+        const int boxTop = y + 3 + (headerH - 24) / 2;
+
+        RECT numberBox =
+        {
+            boxLeft,
+            boxTop,
+            boxLeft + boxWidth,
+            boxTop + 24
+        };
+
+        // 白い入力枠を描画
+        HBRUSH whiteBrush =
+            CreateSolidBrush(RGB(255, 255, 255));
+
+        HPEN borderPen =
+            CreatePen(PS_SOLID, 1, RGB(190, 190, 190));
+
+        if (whiteBrush && borderPen)
+        {
+            HGDIOBJ oldBoxBrush = SelectObject(hdc, whiteBrush);
+            HGDIOBJ oldBoxPen = SelectObject(hdc, borderPen);
+
+            RoundRect(
+                hdc,
+                numberBox.left,
+                numberBox.top,
+                numberBox.right,
+                numberBox.bottom,
+                8,
+                8
+            );
+
+            SelectObject(hdc, oldBoxPen);
+            SelectObject(hdc, oldBoxBrush);
+        }
+
+        if (whiteBrush)
+            DeleteObject(whiteBrush);
+
+        if (borderPen)
+            DeleteObject(borderPen);
+
+        // 白い枠の中に数値を描画
+        SetTextColor(hdc, RGB(30, 30, 30));
+
+        RECT numberTextRect = numberBox;
+        numberTextRect.left += 2;
+        numberTextRect.right -= 2;
+
+        DrawTextW(
+            hdc,
+            repeatNumber.c_str(),
+            -1,
+            &numberTextRect,
+            DT_CENTER | DT_VCENTER |
+            DT_SINGLELINE | DT_NOPREFIX
+        );
+
+        // 「回」を白文字で描画
+        SetTextColor(hdc, RGB(255, 255, 255));
+
+        RECT suffixRect = repeatTextRect;
+        suffixRect.left = boxLeft + boxWidth + 3;
+
+        DrawTextW(
+            hdc,
+            repeatSuffix.c_str(),
+            -1,
+            &suffixRect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE
+        );
+      
+
         SelectObject(hdc, oldPen);
         SelectObject(hdc, oldBrush);
 
@@ -882,15 +999,15 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     FillRect(hdc, &tab, brush);
 
     // ========================================================
-    // ブロック名とフォントサイズ
+    // ブロック名とフォント
     // ========================================================
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 255, 255));
 
     const std::wstring name = GetBlockName(b);
 
-    // フォントを小さくする対象だけフォントサイズを変更
-    const int fontHeight = IsSmallFontBlock(b.type) ? -14 : -16;
+    const int fontHeight =
+        IsSmallFontBlock(b.type) ? -14 : -16;
 
     HFONT font = CreateFontW(
         fontHeight,
@@ -922,18 +1039,9 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         b.y + b.h - 4
     };
 
-    DrawTextW(
-        hdc,
-        name.c_str(),
-        -1,
-        &textRect,
-        DT_LEFT | DT_VCENTER |
-        DT_SINGLELINE | DT_END_ELLIPSIS
-    );
-
     // ========================================================
-  // 数値の白い入力欄を常に表示
-  // ========================================================
+    // 数値入力欄に表示する文字列
+    // ========================================================
     std::wstring numericText;
 
     switch (b.type)
@@ -996,8 +1104,29 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         break;
     }
 
-    // 表示中のブロック名から数値の位置を求める
-    if (!numericText.empty())
+    // ========================================================
+    // 数値の前後を分割して描画
+    // 変数ブロックと「指定秒数待つ」が対象
+    // ========================================================
+    const bool isVariableBlock =
+        b.type == BlockType::SetVariable ||
+        b.type == BlockType::ChangeVariable ||
+        b.type == BlockType::AddVariable ||
+        b.type == BlockType::SubtractVariable;
+
+    const bool shouldSplitText =
+        isVariableBlock ||
+        b.type == BlockType::Wait;
+
+    bool drewSplitText = false;
+
+    SIZE prefixSize{};
+    SIZE numberSize{};
+
+    int boxLeft = 0;
+    int boxWidth = 0;
+
+    if (shouldSplitText && !numericText.empty())
     {
         const size_t numberPos = name.rfind(numericText);
 
@@ -1006,8 +1135,8 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             const std::wstring prefix =
                 name.substr(0, numberPos);
 
-            SIZE prefixSize{};
-            SIZE numberSize{};
+            const std::wstring suffix =
+                name.substr(numberPos + numericText.size());
 
             GetTextExtentPoint32W(
                 hdc,
@@ -1023,9 +1152,94 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
                 &numberSize
             );
 
-            const int boxLeft = b.x + 12 + prefixSize.cx;
-            const int boxTop = b.y + (b.h - 24) / 2;
-            const int boxWidth = (std::max)(static_cast<int>(numberSize.cx) + 4, 30);
+            // 数値入力欄の位置と幅
+            boxLeft = b.x + 12 + prefixSize.cx;
+
+            boxWidth = (std::max)(
+                static_cast<int>(numberSize.cx) + 4,
+                30
+                );
+
+            // 数値の前の文字は元の位置に描画
+            RECT prefixRect = textRect;
+
+            DrawTextW(
+                hdc,
+                prefix.c_str(),
+                -1,
+                &prefixRect,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE
+            );
+
+            // 数値より後ろの文字だけを右へ移動
+            RECT suffixRect = textRect;
+
+            suffixRect.left =
+                boxLeft + boxWidth + 3;
+
+            DrawTextW(
+                hdc,
+                suffix.c_str(),
+                -1,
+                &suffixRect,
+                DT_LEFT | DT_VCENTER |
+                DT_SINGLELINE | DT_END_ELLIPSIS
+            );
+
+            drewSplitText = true;
+        }
+    }
+
+    // 分割対象ではないブロックは全文を従来どおり描画
+    if (!drewSplitText)
+    {
+        DrawTextW(
+            hdc,
+            name.c_str(),
+            -1,
+            &textRect,
+            DT_LEFT | DT_VCENTER |
+            DT_SINGLELINE | DT_END_ELLIPSIS
+        );
+    }
+
+    // ========================================================
+    // 数値の白い入力欄
+    // ========================================================
+    if (!numericText.empty())
+    {
+        const size_t numberPos = name.rfind(numericText);
+
+        if (numberPos != std::wstring::npos)
+        {
+            if (!drewSplitText)
+            {
+                const std::wstring prefix =
+                    name.substr(0, numberPos);
+
+                GetTextExtentPoint32W(
+                    hdc,
+                    prefix.c_str(),
+                    static_cast<int>(prefix.size()),
+                    &prefixSize
+                );
+
+                GetTextExtentPoint32W(
+                    hdc,
+                    numericText.c_str(),
+                    static_cast<int>(numericText.size()),
+                    &numberSize
+                );
+
+                boxLeft = b.x + 12 + prefixSize.cx;
+                boxWidth = (std::max)(
+                    static_cast<int>(numberSize.cx) + 4,
+                    30
+                    );
+            }
+
+            const int boxTop =
+                b.y + (b.h - 24) / 2;
 
             RECT numberBox =
             {
@@ -1040,7 +1254,11 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
                 CreateSolidBrush(RGB(255, 255, 255));
 
             HPEN borderPen =
-                CreatePen(PS_SOLID, 1, RGB(190, 190, 190));
+                CreatePen(
+                    PS_SOLID,
+                    1,
+                    RGB(190, 190, 190)
+                );
 
             if (whiteBrush && borderPen)
             {
@@ -1070,7 +1288,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             if (borderPen)
                 DeleteObject(borderPen);
 
-            // 白い欄の中に数値を黒色で再描画
+            // 白い入力欄の中に数値を黒色で描画
             SetTextColor(hdc, RGB(30, 30, 30));
 
             RECT numberTextRect = numberBox;
@@ -1092,8 +1310,9 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         }
     }
 
-
-
+    // ========================================================
+    // フォントを元に戻して解放
+    // ========================================================
     if (font)
     {
         SelectObject(hdc, oldFont);
@@ -1143,7 +1362,8 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             b.y + 39
         };
 
-        HBRUSH colorBrush = CreateSolidBrush(previewColor);
+        HBRUSH colorBrush =
+            CreateSolidBrush(previewColor);
 
         if (colorBrush)
         {
@@ -1170,6 +1390,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     DeleteObject(pen);
     DeleteObject(brush);
 }
+
 
 // ============================================================
 // If / Else / EndIf の対応位置

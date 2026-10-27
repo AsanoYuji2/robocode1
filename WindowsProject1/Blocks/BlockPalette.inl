@@ -1,3 +1,9 @@
+// Categories for the block palette. The function category is reserved for
+// callback-name markers and user-defined function calls.
+std::vector<BlockType> GetBlockTypes(BlockCategory category);
+
+BlockCategory GetCategoryFromBlockType(BlockType type);
+
 std::vector<BlockType> GetBlockTypes(BlockCategory category)
 {
     switch (category)
@@ -8,7 +14,8 @@ std::vector<BlockType> GetBlockTypes(BlockCategory category)
             BlockType::MoveBackward,
             BlockType::MoveRight,
             BlockType::MoveLeft,
-            BlockType::GetAwayFromWall
+            BlockType::GetAwayFromWall,
+            BlockType::ZigzagMove
         };
 
     case BlockCategory::Control:
@@ -34,22 +41,30 @@ std::vector<BlockType> GetBlockTypes(BlockCategory category)
 
     case BlockCategory::Function:
         return {
+            BlockType::OnScannedRobot,
+            BlockType::OnHitWall,
+            BlockType::OnBulletHit,
+            BlockType::OnHitByBullet,
+            BlockType::OnHitRobot,
+            BlockType::OnWin
+        };
+
+    case BlockCategory::Attack:
+        return {
+            BlockType::FireBullet,
+            BlockType::FireBulletAndGetResult,
             BlockType::KeepAwayRadarFire,
             BlockType::BodyBlowFire,
             BlockType::SmartFire,
-            BlockType::TurnBodyToEnemy,
-            BlockType::TurnGunToEnemy,
             BlockType::HesitateNextBullet,
-            BlockType::VictoryDance,
-            BlockType::VictorySpin,
-            BlockType::ForwardBackwardGun360,
-            BlockType::ZigzagMove
+            BlockType::Scan
         };
 
     case BlockCategory::Event:
-        // イベントは RobotEventManager 側で管理されています。
-        // 現状の BlockType にはイベント専用ブロックがありません。
-        return {};
+        return {
+            BlockType::VictoryDance,
+            BlockType::VictorySpin
+        };
 
     case BlockCategory::Rotate:
         return {
@@ -58,7 +73,10 @@ std::vector<BlockType> GetBlockTypes(BlockCategory category)
             BlockType::TurnGunRight,
             BlockType::TurnGunLeft,
             BlockType::TurnRadarRight,
-            BlockType::TurnRadarLeft
+            BlockType::TurnRadarLeft,
+            BlockType::TurnBodyToEnemy,
+            BlockType::TurnGunToEnemy,
+            BlockType::ForwardBackwardGun360
         };
 
     case BlockCategory::Color:
@@ -102,18 +120,7 @@ std::vector<BlockType> GetBlockTypes(BlockCategory category)
         };
 
     case BlockCategory::Other:
-        return {
-            BlockType::FireBullet,
-             BlockType::FireBulletAndGetResult,
-            BlockType::Scan
-        };
-
     default:
         return {};
     }
 }
-
-// ============================================================
-// ブロック一覧の更新
-// ============================================================
-
