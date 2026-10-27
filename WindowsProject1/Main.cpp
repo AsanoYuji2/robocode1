@@ -178,6 +178,7 @@ enum class BlockCategory
     Control,
     Variables,
     Function,
+    Attack,
     Event,
     Rotate,
     Color,
@@ -204,6 +205,7 @@ const wchar_t* const CATEGORY_NAMES[CATEGORY_COUNT] =
     L"制御",
     L"変数",
     L"関数",
+    L"攻撃",
     L"イベント",
     L"旋回",
     L"色を変更",
@@ -214,16 +216,17 @@ const wchar_t* const CATEGORY_NAMES[CATEGORY_COUNT] =
 
 const COLORREF CATEGORY_COLORS[CATEGORY_COUNT] =
 {
-    RGB(65, 150, 230),   // 移動
-    RGB(235, 165, 45),   // 制御
-    RGB(225, 185, 45),   // 変数
-    RGB(220, 90, 150),   // 関数
-    RGB(50, 190, 190),   // イベント
-    RGB(120, 120, 130),  // 旋回
-    RGB(220, 90, 90),    // 色を変更
-    RGB(100, 170, 110),  // 情報
-    RGB(130, 100, 200),  // システム
-    RGB(100, 100, 100)   // その他
+    RGB(65, 150, 230),   // Move
+    RGB(235, 165, 45),   // Control
+    RGB(225, 185, 45),   // Variables
+    RGB(220, 90, 150),   // Function and user-defined functions
+    RGB(218, 133, 39),   // Attack
+    RGB(50, 190, 190),   // Event
+    RGB(120, 120, 130),  // Rotation
+    RGB(220, 90, 90),    // Color
+    RGB(100, 170, 110),  // Information
+    RGB(130, 100, 200),  // System
+    RGB(100, 100, 100)   // Other
 };
 
 // カテゴリボタン

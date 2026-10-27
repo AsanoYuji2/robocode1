@@ -707,9 +707,34 @@ namespace
         case BlockType::HesitateNextBullet:
             EmitLine(code, indent, "dodgeAfterBulletHit();");
             break;
+        case BlockType::OnScannedRobot:
+        case BlockType::OnHitWall:
+        case BlockType::OnBulletHit:
+        case BlockType::OnHitByBullet:
+        case BlockType::OnHitRobot:
+        case BlockType::OnWin:
+            // Palette/display markers only. They intentionally emit no Java statements.
+            break;
         case BlockType::VictoryDance:
+        {
+            const std::string danceIndex =
+                "__victoryDanceIndex" + std::to_string(repeatIndex++);
+
+            EmitLine(
+                code,
+                indent,
+                "for (int " + danceIndex + " = 0; " +
+                danceIndex + " < 50; ++" + danceIndex + ") {"
+            );
+
+            EmitLine(code, indent + 1, "turnRight(30);");
+            EmitLine(code, indent + 1, "turnLeft(30);");
+
+            EmitLine(code, indent, "}");
+            break;
+        }
         case BlockType::VictorySpin:
-            // Export の前段で onWin() に移動するため、run() には残さない。
+            EmitLine(code, indent, "turnRight(36000);");
             break;
         case BlockType::SetBodyColor:
             EmitLine(code, indent, "setBodyColor(new Color(" +
