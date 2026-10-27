@@ -240,7 +240,8 @@ void CreateCategoryButtons(HWND hwnd)
 
     for (int i = 0; i < CATEGORY_COUNT; ++i)
     {
-        g_categoryButtons[i] = CreateWindowW(
+        g_categoryButtons[i] = 
+            (
             L"BUTTON",
             CATEGORY_NAMES[i],
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,

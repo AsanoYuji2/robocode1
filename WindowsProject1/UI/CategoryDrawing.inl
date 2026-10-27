@@ -139,16 +139,16 @@ void DrawBlockListItem(const DRAWITEMSTRUCT* dis)
     BlockType type = g_visibleBlockTypes[index];
     COLORREF color = GetBlockCategoryColor(type);
 
-    // 色の値をデバッグ出力
-    wchar_t debug[128]{};
-    swprintf_s(
-        debug,
-        L"index=%d, type=%d, color=0x%08X\n",
-        index,
-        static_cast<int>(type),
-        static_cast<unsigned int>(color)
-    );
-    OutputDebugStringW(debug);
+    //// 色の値をデバッグ出力
+    //wchar_t debug[128]{};
+    //swprintf_s(
+    //    debug,
+    //    L"index=%d, type=%d, color=0x%08X\n",
+    //    index,
+    //    static_cast<int>(type),
+    //    static_cast<unsigned int>(color)
+    //);
+    //OutputDebugStringW(debug);
 
     // ホバー・選択状態
     bool selected = (dis->itemState & ODS_SELECTED) != 0;
@@ -167,8 +167,11 @@ void DrawBlockListItem(const DRAWITEMSTRUCT* dis)
 
     // 背景色を描画
     HBRUSH brush = CreateSolidBrush(color);
-    FillRect(hdc, &rc, brush);
-    DeleteObject(brush);
+    if (brush)
+    {
+        FillRect(hdc, &rc, brush);
+        DeleteObject(brush);
+    }
 
     // ブロック名を描画
     SetBkMode(hdc, TRANSPARENT);

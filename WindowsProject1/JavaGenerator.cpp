@@ -5,14 +5,8 @@
 #include <string>
 #include <filesystem>
 #include <cstdlib>
-#include <cmath>
-#include <iomanip>
 #include <sstream>
-#include <map>
 #include <set>
-#include <vector>
-#include <limits>
-#include <cctype>
 
 #include "JavaGenerator.h"
 #include "UserFunction.h"
@@ -207,12 +201,180 @@ namespace
         return ids;
     }
 
-    std::string NumericId(const JavaIdentifiers& ids, const std::wstring& name)
-    {
-        const std::wstring actual = name.empty() ? L"score" : name;
-        const auto it = ids.numeric.find(actual);
-        return it == ids.numeric.end() ? "num_score" : it->second;
+struct ValidationError {
+    std::wstring target;  // エラーの発生箇所
+    std::wstring reason;  // エラーの理由
+};
+
+// 有効な数値かどうかを判定するヘルパー
+bool IsValidNumber(double val) {
+    return !std::isnan(val) && !std::isinf(val);
+}
+
+// プロジェクト全体の品質・エラーチェック関数
+bool ValidateRobotProject(
+    const std::vector<Block>& blocks,
+    const std::wstring& folderPath,
+    const std::wstring& robotName,
+    const std::vector<UserDefinedFunction>& functions, // 登録されている自作関数一覧
+    std::vector<ValidationError>& outErrors)
+{
+    outErrors.clear();
+
+    //必須入力チェック
+    if (robotName.empty()) {
+        outErrors.push_back({ L"プロジェクト設定", L"ロボット名が入力されていません。" });
     }
+    if (folderPath.empty()) {
+        outErrors.push_back({ L"プロジェクト設定", L"ロボットの保存先フォルダが指定されていません。" });
+    }
+    if (blocks.empty()) {
+        outErrors.push_back({ L"キャンバス", L"ブロックが1つも配置されていません。" });
+    }
+
+    // 制御構造や変数の追跡用セット
+    int repeatDepth = 0;
+    int ifDepth = 0;
+    std::set<std::wstring> definedVariables; // 定義された変数名を記憶
+
+    //すべてのブロックに対する詳細チェック
+    for (size_t i = 0; i < blocks.size(); ++i)
+    {
+        const auto& block = blocks[i];
+
+        // --- A. 自作関数の呼び出しチェック ---
+        if (IsUserFunctionCall(block))
+        {
+            std::wstring funcName = GetUserFunctionCallName(block);
+            auto it = std::find_if(functions.begin(), functions.end(), [&](const UserDefinedFunction& f) {
+                return f.name == funcName;
+                });
+            if (it == functions.end()) {
+                outErrors.push_back({ L"関数ブロック", L"存在しない関数「" + funcName + L"」が呼び出されています。" });
+            }
+            continue;
+        }
+
+        switch (block.type)
+        {
+            // --- B. 移動・旋回系の数値チェック ---
+        case BlockType::Move:
+        case BlockType::MoveBackward:
+        case BlockType::MoveRight:
+        case BlockType::MoveLeft:
+            if (!IsValidNumber(block.distance)) {
+                outErrors.push_back({ L"移動ブロック", L"移動距離の数値が不正です。" });
+            }
+            break;
+
+        case BlockType::TurnRight:
+        case BlockType::TurnLeft:
+        case BlockType::TurnGunRight:
+        case BlockType::TurnGunLeft:
+        case BlockType::TurnRadarRight:
+        case BlockType::TurnRadarLeft:
+            if (!IsValidNumber(block.degrees)) {
+                outErrors.push_back({ L"旋回ブロック", L"角度の数値が不正です。" });
+            }
+            break;
+
+            // --- C. 攻撃系の威力（Power）チェック ---
+        case BlockType::FireBullet:
+        case BlockType::FireBulletAndGetResult:
+            if (!IsValidNumber(block.power) || block.power <= 0.0 || block.power > 3.0) {
+                outErrors.push_back({ L"射撃ブロック", L"弾の威力(Power)は 0.1 ～ 3.0 の間で指定してください。" });
+            }
+            break;
+
+            // --- D. 待機時間のチェック ---
+        case BlockType::Wait:
+            if (!IsValidNumber(block.waitSeconds) || block.waitSeconds < 0.0) {
+                outErrors.push_back({ L"待機ブロック", L"待機時間が不正（マイナス値）です。" });
+            }
+            break;
+
+            // --- E. 制御構造（Repeat / If）のチェック ---
+        case BlockType::Repeat:
+            repeatDepth++;
+            if (block.repeatCount <= 0) {
+                outErrors.push_back({ L"繰り返しブロック", L"繰り返し回数は1回以上に設定してください。" });
+            }
+            break;
+
+        case BlockType::EndRepeat:
+            repeatDepth--;
+            if (repeatDepth < 0) {
+                outErrors.push_back({ L"繰り返しブロック", L"「繰り返しここまで」に対応する「繰り返す」がありません。" });
+            }
+            break;
+
+        case BlockType::If:
+            ifDepth++;
+            break;
+
+        case BlockType::EndIf:
+            ifDepth--;
+            if (ifDepth < 0) {
+                outErrors.push_back({ L"条件分岐ブロック", L"「条件ここまで」に対応する「もし」がありません。" });
+            }
+            break;
+
+            // --- F. 変数系のチェック ---
+        case BlockType::CreateVariable:
+            if (block.variableName.empty()) {
+                outErrors.push_back({ L"変数ブロック", L"変数名が空です。" });
+            }
+            else {
+                definedVariables.insert(block.variableName);
+            }
+            break;
+
+        case BlockType::SetVariable:
+        case BlockType::ChangeVariable:
+        case BlockType::AddVariable:
+        case BlockType::SubtractVariable:
+            if (!block.variableName.empty() && definedVariables.find(block.variableName) == definedVariables.end()) {
+                // ※ 事前作成が必須ルールの場合に警告・エラーにする場合
+                // outErrors.push_back({ L"変数ブロック", L"変数「" + block.variableName + L"」が作成される前に使用されています。" });
+            }
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    // 閉じていない制御構造のチェック
+    if (repeatDepth > 0) {
+        outErrors.push_back({ L"制御構造", L"「繰り返す」に対して「繰り返しここまで」が不足しています。" });
+    }
+    if (ifDepth > 0) {
+        outErrors.push_back({ L"制御構造", L"「もし」に対して「条件ここまで」が不足しています。" });
+    }
+
+    return outErrors.empty();
+}
+//エラーチェックの実行
+bool ExportJavaCustom(
+    const std::vector<Block>& blocks,
+    const std::wstring& targetFolder,
+    const std::wstring& robotName,
+    const std::vector<UserDefinedFunction>& functions)
+{
+    std::vector<ValidationError> errors;
+    if (!ValidateRobotProject(blocks, targetFolder, robotName, functions, errors))
+    {
+        std::wstring errorMsg = L"エラーが検出されたため、処理を中止しました。\n\n【検出された問題】\n";
+        for (const auto& err : errors)
+        {
+            errorMsg += L"・ [" + err.target + L"] " + err.reason + L"\n";
+        }
+        MessageBoxW(nullptr, errorMsg.c_str(), L"品質エラー", MB_OK | MB_ICONWARNING);
+        return false;
+    }
+
+    std::wstring debugMsg = L"保存先: " + targetFolder + L"\nロボット名: " + robotName;
+    MessageBoxW(nullptr, debugMsg.c_str(), L"デバッグ確認", MB_OK);
 
     std::string BooleanId(const JavaIdentifiers& ids, const std::wstring& name)
     {
