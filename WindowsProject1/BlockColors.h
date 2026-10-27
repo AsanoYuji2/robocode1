@@ -1,20 +1,14 @@
-
 #pragma once
 
 #include <windows.h>
 #include "Block.h"
 
-// ============================================================
-// ブロックカテゴリの色
-// ============================================================
-
+// Returns the color used by each block in the palette and on the canvas.
 inline COLORREF GetBlockCategoryColor(BlockType type)
 {
     switch (type)
     {
-        // ----------------------------------------------------
-        // 移動：青
-        // ----------------------------------------------------
+        // Movement
     case BlockType::Move:
     case BlockType::MoveBackward:
     case BlockType::MoveRight:
@@ -23,9 +17,7 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
     case BlockType::ZigzagMove:
         return RGB(65, 150, 230);
 
-        // ----------------------------------------------------
-        // 旋回・照準：グレー
-        // ----------------------------------------------------
+        // Rotation and aiming
     case BlockType::TurnRight:
     case BlockType::TurnLeft:
     case BlockType::TurnGunRight:
@@ -37,9 +29,7 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
     case BlockType::ForwardBackwardGun360:
         return RGB(120, 120, 130);
 
-        // ----------------------------------------------------
-        // 攻撃：オレンジ
-        // ----------------------------------------------------
+        // Attack
     case BlockType::FireBullet:
     case BlockType::FireBulletAndGetResult:
     case BlockType::KeepAwayRadarFire:
@@ -49,9 +39,7 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
     case BlockType::Scan:
         return RGB(218, 133, 39);
 
-        // ----------------------------------------------------
-        // 制御：黄橙
-        // ----------------------------------------------------
+        // Control
     case BlockType::Repeat:
     case BlockType::EndRepeat:
     case BlockType::Wait:
@@ -61,9 +49,7 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
     case BlockType::DoNothing:
         return RGB(235, 165, 45);
 
-        // ----------------------------------------------------
-        // 変数：ピンク
-        // ----------------------------------------------------
+        // Variables
     case BlockType::CreateVariable:
     case BlockType::SetVariable:
     case BlockType::ChangeVariable:
@@ -72,9 +58,29 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
     case BlockType::SetBoolean:
         return RGB(190, 70, 120);
 
-        // ----------------------------------------------------
-        // 情報取得：緑
-        // ----------------------------------------------------
+        // Function palette entries
+    case BlockType::OnScannedRobot:
+    case BlockType::OnHitWall:
+    case BlockType::OnBulletHit:
+    case BlockType::OnHitByBullet:
+    case BlockType::OnHitRobot:
+    case BlockType::OnWin:
+        return RGB(220, 90, 150);
+
+        // Victory actions
+    case BlockType::VictoryDance:
+    case BlockType::VictorySpin:
+        return RGB(200, 170, 40);
+
+        // Robot colors
+    case BlockType::SetBodyColor:
+    case BlockType::SetGunColor:
+    case BlockType::SetRadarColor:
+    case BlockType::SetBulletColor:
+    case BlockType::SetScanColor:
+        return RGB(200, 90, 90);
+
+        // Information getters
     case BlockType::GetName:
     case BlockType::GetX:
     case BlockType::GetY:
@@ -95,9 +101,7 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
     case BlockType::GetTime:
         return RGB(60, 150, 90);
 
-        // ----------------------------------------------------
-        // システム・設定：紫
-        // ----------------------------------------------------
+        // System settings
     case BlockType::Stop:
     case BlockType::Resume:
     case BlockType::SetAdjustGunForRobotTurn:
@@ -105,22 +109,7 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
     case BlockType::SetAdjustRadarForGunTurn:
         return RGB(130, 100, 200);
 
-        // ----------------------------------------------------
-        // 色・演出：赤
-        // ----------------------------------------------------
-    case BlockType::SetBodyColor:
-    case BlockType::SetGunColor:
-    case BlockType::SetRadarColor:
-    case BlockType::SetBulletColor:
-    case BlockType::SetScanColor:
-        return RGB(200, 90, 90);
-
-    case BlockType::VictoryDance:
-    case BlockType::VictorySpin:
-        return RGB(200, 170, 40);
-
     default:
         return RGB(100, 100, 100);
     }
 }
-//他のファイルを1つのファイルを分割して送るので全て送るまで待って

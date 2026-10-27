@@ -73,6 +73,12 @@
     X(Scan)\
     X(ForwardBackwardGun360)\
     X(ZigzagMove)\
+    X(OnScannedRobot)\
+    X(OnHitWall)\
+    X(OnBulletHit)\
+    X(OnHitByBullet)\
+    X(OnHitRobot)\
+    X(OnWin)
 
 
 enum class BlockType
