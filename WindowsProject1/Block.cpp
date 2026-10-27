@@ -312,11 +312,11 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::TurnRight:
         return L"右に旋回 " +
-            FormatNumber(b.degrees) + L" 度";
+            FormatNumber(b.degrees) + L"     度";
 
     case BlockType::TurnLeft:
         return L"左に旋回 " +
-            FormatNumber(b.degrees) + L" 度";
+            FormatNumber(b.degrees) + L"     度";
 
     case BlockType::MoveRight:
         return L"右に移動  " +
@@ -332,7 +332,7 @@ std::wstring GetBlockName(const Block& b)
 
     case BlockType::Repeat:
         return L"繰り返す  " +
-            std::to_wstring(b.repeatCount) + L"  回";
+            std::to_wstring(b.repeatCount) + L" 回";
 
     case BlockType::EndRepeat:
         return L"繰り返しここまで";
@@ -743,6 +743,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     HGDIOBJ oldBrush = SelectObject(hdc, brush);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
 
+
     // ========================================================
     // Repeat：C字型ブロック
     // ========================================================
@@ -854,6 +855,116 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             repeatName.c_str(),
             -1,
             &textRect,
+            DT_LEFT | DT_VCENTER |
+            DT_SINGLELINE | DT_END_ELLIPSIS
+        );
+
+        // ========================================================
+       // 繰り返し回数の白い入力欄
+       // ========================================================
+        const std::wstring repeatNumber =
+            std::to_wstring(b.repeatCount);
+
+        const std::wstring repeatPrefix = L"繰り返し ";
+
+        SIZE prefixSize{};
+        SIZE numberSize{};
+
+        GetTextExtentPoint32W(
+            hdc,
+            repeatPrefix.c_str(),
+            static_cast<int>(repeatPrefix.size()),
+            &prefixSize
+        );
+
+        GetTextExtentPoint32W(
+            hdc,
+            repeatNumber.c_str(),
+            static_cast<int>(repeatNumber.size()),
+            &numberSize
+        );
+
+        const int boxLeft = x + 12 + prefixSize.cx;
+        const int boxTop = y + (headerH - 24) / 2;
+        const int boxWidth =
+            (std::max)(static_cast<int>(numberSize.cx) + 4, 30);
+
+        RECT numberBox =
+        {
+            boxLeft,
+            boxTop,
+            boxLeft + boxWidth,
+            boxTop + 24
+        };
+
+        HBRUSH whiteBrush =
+            CreateSolidBrush(RGB(255, 255, 255));
+
+        HPEN borderPen =
+            CreatePen(PS_SOLID, 1, RGB(190, 190, 190));
+
+        if (whiteBrush && borderPen)
+        {
+            HGDIOBJ oldBoxBrush =
+                SelectObject(hdc, whiteBrush);
+
+            HGDIOBJ oldBoxPen =
+                SelectObject(hdc, borderPen);
+
+            RoundRect(
+                hdc,
+                numberBox.left,
+                numberBox.top,
+                numberBox.right,
+                numberBox.bottom,
+                8,
+                8
+            );
+
+            SelectObject(hdc, oldBoxPen);
+            SelectObject(hdc, oldBoxBrush);
+        }
+
+        if (whiteBrush)
+            DeleteObject(whiteBrush);
+
+        if (borderPen)
+            DeleteObject(borderPen);
+
+        // 白い枠の中に回数を黒色で表示
+        SetTextColor(hdc, RGB(30, 30, 30));
+
+        RECT numberTextRect = numberBox;
+        numberTextRect.left += 2;
+        numberTextRect.right -= 2;
+
+        DrawTextW(
+            hdc,
+            repeatNumber.c_str(),
+            -1,
+            &numberTextRect,
+            DT_CENTER |
+            DT_VCENTER |
+            DT_SINGLELINE |
+            DT_NOPREFIX
+        );
+
+        SetTextColor(hdc, RGB(255, 255, 255));
+
+        // 「回」を白色で表示
+        RECT unitRect =
+        {
+            numberBox.right + 3,
+            y + 8,
+            x + w - 8,
+            y + headerH
+        };
+
+        DrawTextW(
+            hdc,
+            L"回",
+            -1,
+            &unitRect,
             DT_LEFT | DT_VCENTER |
             DT_SINGLELINE | DT_END_ELLIPSIS
         );
