@@ -914,12 +914,58 @@ void BlockManager::SnapSelectedBlock()
     int bestDistance = SNAP_DISTANCE + 1;
     int bestSide = -1;
 
+    // ========================================
+// ③-A-1 ブロック同士が重なっている場合
+//     接続先の下に挿入する候補として優先する
+// ========================================
+    for (int i = 0; i < count; ++i)
+    {
+        if (isMoving[static_cast<size_t>(i)])
+            continue;
+
+        const Block& target = blocks[static_cast<size_t>(i)];
+        const Block& first = blocks[static_cast<size_t>(firstBlock)];
+
+        const int targetWidth = GetRangeSelectionWidth(target);
+        const int firstWidth = GetRangeSelectionWidth(first);
+
+        const int targetHeight = (std::max)(
+            target.h,
+            target.type == BlockType::Repeat ? 120 : target.h);
+
+        const int firstHeight = (std::max)(
+            first.h,
+            first.type == BlockType::Repeat ? 120 : first.h);
+
+        // CとAの矩形が重なっているか判定する
+        const bool overlaps =
+            first.x < target.x + targetWidth &&
+            first.x + firstWidth > target.x &&
+            first.y < target.y + targetHeight &&
+            first.y + firstHeight > target.y;
+
+        if (!overlaps)
+            continue;
+
+        // Aに既存の子Bがあっても、Aの下へCを挿入する。
+        // 通常の接続候補より優先するため、距離を0にする。
+        bestTarget = i;
+        bestDistance = 0;
+        bestSide = 0;
+        break;
+    }
+
     // 0 = 移動グループを接続先の下に挿入
     // 1 = 接続先を移動グループの下につなぐ
     for (int i = 0; i < count; ++i)
     {
         if (isMoving[i])
             continue;
+
+        // 重なりによる挿入候補が見つかっている場合、
+        // それより優先度の低い通常候補は調べない。
+        if (bestDistance == 0)
+            break;
 
         const Block& target = blocks[i];
 
