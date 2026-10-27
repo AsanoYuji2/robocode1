@@ -70,7 +70,7 @@ inline COLORREF GetBlockCategoryColor(BlockType type)
         // Victory actions
     case BlockType::VictoryDance:
     case BlockType::VictorySpin:
-        return RGB(200, 170, 40);
+        return RGB(50, 190, 190);
 
         // Robot colors
     case BlockType::SetBodyColor:
