@@ -1105,7 +1105,7 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
-     
+
 
 
         ActiveManager().OnMouseMove(p.x, p.y);
@@ -1548,14 +1548,6 @@ LRESULT CALLBACK WndProc(
     case WM_CAPTURECHANGED:
     {
         g_panning = false;
-        g_draggingFromList = false;
-        g_dragBlockFunctionName.clear();
-        g_isResizingList = false;
-
-        if (g_dragPreviewWnd)
-            ShowWindow(g_dragPreviewWnd, SW_HIDE);
-
-
         return 0;
     }
 
@@ -1616,7 +1608,7 @@ LRESULT CALLBACK WndProc(
                 functionGuideRect, RGB(72, 82, 98), 12, false);
         }
 
-        
+
 
         // ⑤ ズーム表示
         wchar_t zoomText[64]{};
