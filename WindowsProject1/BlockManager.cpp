@@ -8,8 +8,8 @@
 
 namespace
 {
-    constexpr int SNAP_DISTANCE = 24;
-    constexpr int COLUMN_DISTANCE = 35;
+    constexpr int SNAP_DISTANCE = 35;
+    constexpr int COLUMN_DISTANCE = 50;
     constexpr int TAB_HEIGHT = 8;
     constexpr int SELECTION_PADDING = 6;
     constexpr int MAX_HISTORY = 100;
@@ -1025,6 +1025,9 @@ void BlockManager::SnapSelectedBlock()
     // ========================================
     // ④ 接続先の下にグループを挿入
     // ========================================
+    // ========================================
+// ④ 接続先の下にグループを挿入
+// ========================================
     if (bestSide == 0)
     {
         const int target = bestTarget;
@@ -1032,27 +1035,37 @@ void BlockManager::SnapSelectedBlock()
         // 接続先に元からつながっているブロック
         const int oldChild = GetChild(target);
 
-        // 移動グループを接続位置に移動
+        // 接続先AのX座標に完全に合わせる
         const int targetX = blocks[target].x;
+
+        // Aの下端に接続する位置
         const int targetY =
             blocks[target].y + blocks[target].h - TAB_HEIGHT;
 
-        const int moveX = targetX - blocks[firstBlock].x;
-        const int moveY = targetY - blocks[firstBlock].y;
+        const int moveX =
+            targetX - blocks[firstBlock].x;
 
+        const int moveY =
+            targetY - blocks[firstBlock].y;
+
+        // CおよびCにつながるブロックをまとめて移動
         for (int index : movingBlocks)
         {
             blocks[index].x += moveX;
             blocks[index].y += moveY;
         }
 
-        // 既存の子ブロックがあれば、
-        // 移動グループの下につなげられる位置までずらす
+        // 既存の子Bがあれば、Cの下に接続できる位置へ移動
         if (oldChild >= 0 && !isMoving[oldChild])
         {
+            const int newChildX = blocks[lastBlock].x;
             const int newChildY =
                 blocks[lastBlock].y
-                + blocks[lastBlock].h - TAB_HEIGHT;
+                + blocks[lastBlock].h
+                - TAB_HEIGHT;
+
+            const int shiftX =
+                newChildX - blocks[oldChild].x;
 
             const int shiftY =
                 newChildY - blocks[oldChild].y;
@@ -1068,17 +1081,17 @@ void BlockManager::SnapSelectedBlock()
                 if (isMoving[child])
                     break;
 
-                blocks[child].x += moveX;
+                blocks[child].x += shiftX;
                 blocks[child].y += shiftY;
 
                 child = GetChild(child);
             }
 
-            // 元の子を移動グループの末尾につなぐ
+            // Cの下にBを接続
             parent[oldChild] = lastBlock;
         }
 
-        // 接続先 → 移動グループ
+        // Aの下にCを接続
         parent[firstBlock] = target;
 
         return;
