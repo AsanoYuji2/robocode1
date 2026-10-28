@@ -827,9 +827,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             DeleteObject(bgBrush);
         }
 
-        
         // 内側上部の下向き接続タブ
-       // 輪郭線を描かず、ブロックと同じ色で塗りつぶす
         POINT innerTab[] =
         {
             { x + wallW + 24, y + headerH - 1 },
@@ -838,19 +836,11 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
             { x + wallW + 24, y + headerH + tabH }
         };
 
-        HGDIOBJ oldInnerPen = SelectObject(
-            hdc,
-            GetStockObject(NULL_PEN)
-        );
-
         Polygon(
             hdc,
             innerTab,
             sizeof(innerTab) / sizeof(innerTab[0])
         );
-
-        SelectObject(hdc, oldInnerPen);
-
 
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(255, 255, 255));
