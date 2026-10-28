@@ -3,6 +3,7 @@
 #include "UserFunction.h"
 
 #include <algorithm>
+#include <vector>
 #include <chrono>
 #include <thread>
 #include <limits>
@@ -605,19 +606,19 @@ std::wstring GetBlockName(const Block& b)
     case BlockType::ZigzagMove:
         return L"左右にジグザグ移動する";
 
-        // Java callback names shown in the Function palette. These are display-only markers.
+        // イベントブロックの表示名（画面に表示する名前）
     case BlockType::OnScannedRobot:
-        return L"onScannedRobot()";
+        return L"敵ロボットを見つけたとき";
     case BlockType::OnHitWall:
-        return L"onHitWall()";
+        return L"壁にぶつかったとき";
     case BlockType::OnBulletHit:
-        return L"onBulletHit()";
+        return L"撃った弾が敵に当たったとき";
     case BlockType::OnHitByBullet:
-        return L"onHitByBullet()";
+        return L"敵の弾に当たったとき";
     case BlockType::OnHitRobot:
-        return L"onHitRobot()";
+        return L"ロボット同士がぶつかったとき";
     case BlockType::OnWin:
-        return L"onWin()";
+        return L"勝利したとき";
     }
 
     return L"不明";
@@ -751,54 +752,62 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     // ========================================================
     // Repeat：C字型ブロック
     // ========================================================
-    if (b.type == BlockType::Repeat)
+    const bool isEventContainer =
+        b.type == BlockType::OnScannedRobot ||
+        b.type == BlockType::OnHitWall ||
+        b.type == BlockType::OnBulletHit ||
+        b.type == BlockType::OnHitByBullet ||
+        b.type == BlockType::OnHitRobot ||
+        b.type == BlockType::OnWin;
+
+    if (b.type == BlockType::Repeat || isEventContainer)
     {
         const int x = b.x;
         const int y = b.y;
-        const int w = b.w;
+        // Container drawing must use the same effective width as hit-testing.
+        // Event blocks are wide containers even when their stored width is smaller.
+        const int w = drawWidth;
         const int h = (std::max)(b.h, 120);
 
         const int tabW = 40;
         const int tabX = 24;
         const int wallW = 24;
         const int headerH = 46;
-        const int bottomH = 30;
+        const int bottomH = isEventContainer ? 12 : 30;
 
-        POINT points[] =
+        std::vector<POINT> points = { { x, y } };
+        if (!isEventContainer)
         {
-            { x, y },
-            { x + tabX, y },
-            { x + tabX, y + tabH },
-            { x + tabX + tabW, y + tabH },
-            { x + tabX + tabW, y },
+            points.push_back({ x + tabX, y });
+            points.push_back({ x + tabX, y + tabH });
+            points.push_back({ x + tabX + tabW, y + tabH });
+            points.push_back({ x + tabX + tabW, y });
+        }
+        points.push_back({ x + w, y });
+        points.push_back({ x + w, y + headerH });
+        points.push_back({ x + wallW, y + headerH });
+        points.push_back({ x + wallW, y + h - bottomH });
+        if (!isEventContainer)
+        {
+            points.push_back({ x + wallW + 24, y + h - bottomH });
+            points.push_back({ x + wallW + 24, y + h - bottomH + 8 });
+            points.push_back({ x + wallW + 64, y + h - bottomH + 8 });
+            points.push_back({ x + wallW + 64, y + h - bottomH });
+        }
+        // Both container types have a complete bottom rail. Only Repeat has
+        // the output tab; event blocks must not look stack-connectable.
+        points.push_back({ x + w, y + h - bottomH });
+        points.push_back({ x + w, y + h });
+        if (!isEventContainer)
+        {
+            points.push_back({ x + tabX + tabW, y + h });
+            points.push_back({ x + tabX + tabW, y + h + tabH });
+            points.push_back({ x + tabX, y + h + tabH });
+            points.push_back({ x + tabX, y + h });
+        }
+        points.push_back({ x, y + h });
 
-            { x + w, y },
-            { x + w, y + headerH },
-
-            { x + wallW, y + headerH },
-            { x + wallW, y + h - bottomH },
-
-            { x + wallW + 24, y + h - bottomH },
-            { x + wallW + 24, y + h - bottomH + 8 },
-            { x + wallW + 64, y + h - bottomH + 8 },
-            { x + wallW + 64, y + h - bottomH },
-
-            { x + w, y + h - bottomH },
-            { x + w, y + h },
-
-            { x + tabX + tabW, y + h },
-            { x + tabX + tabW, y + h + tabH },
-            { x + tabX, y + h + tabH },
-            { x + tabX, y + h },
-
-            { x, y + h }
-        };
-
-        Polygon(
-            hdc,
-            points,
-            sizeof(points) / sizeof(points[0])
-        );
+        Polygon(hdc, points.data(), static_cast<int>(points.size()));
 
         // 内側を背景色で塗る
         HBRUSH bgBrush =
@@ -836,127 +845,146 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(255, 255, 255));
 
-       
 
-        const std::wstring repeatPrefix = L"繰り返し ";
-        const std::wstring repeatNumber =
-            std::to_wstring(b.repeatCount);
-        const std::wstring repeatSuffix = L" 回";
 
-        // 「繰り返し」の文字を描画
-        RECT repeatTextRect =
+        if (isEventContainer)
         {
-            x + 12,
-            y + 8,
-            x + w - 8,
-            y + headerH
-        };
-
-        DrawTextW(
-            hdc,
-            repeatPrefix.c_str(),
-            -1,
-            &repeatTextRect,
-            DT_LEFT | DT_VCENTER | DT_SINGLELINE
-        );
-
-        // 数値の位置と幅を計算
-        SIZE prefixSize{};
-        SIZE numberSize{};
-
-        GetTextExtentPoint32W(
-            hdc,
-            repeatPrefix.c_str(),
-            static_cast<int>(repeatPrefix.size()),
-            &prefixSize
-        );
-
-        GetTextExtentPoint32W(
-            hdc,
-            repeatNumber.c_str(),
-            static_cast<int>(repeatNumber.size()),
-            &numberSize
-        );
-
-        const int boxLeft = x + 12 + prefixSize.cx;
-        const int boxWidth = (std::max)(
-            static_cast<int>(numberSize.cx) + 4,
-            30
-            );
-
-        const int boxTop = y + 3 + (headerH - 24) / 2;
-
-        RECT numberBox =
-        {
-            boxLeft,
-            boxTop,
-            boxLeft + boxWidth,
-            boxTop + 24
-        };
-
-        // 白い入力枠を描画
-        HBRUSH whiteBrush =
-            CreateSolidBrush(RGB(255, 255, 255));
-
-        HPEN borderPen =
-            CreatePen(PS_SOLID, 1, RGB(190, 190, 190));
-
-        if (whiteBrush && borderPen)
-        {
-            HGDIOBJ oldBoxBrush = SelectObject(hdc, whiteBrush);
-            HGDIOBJ oldBoxPen = SelectObject(hdc, borderPen);
-
-            RoundRect(
-                hdc,
-                numberBox.left,
-                numberBox.top,
-                numberBox.right,
-                numberBox.bottom,
-                8,
-                8
-            );
-
-            SelectObject(hdc, oldBoxPen);
-            SelectObject(hdc, oldBoxBrush);
+            const std::wstring eventName = GetBlockName(b);
+            RECT eventTextRect = { x + 12, y + 6, x + w - 8, y + headerH - 2 };
+            HFONT eventFont = CreateFontW(-15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Meiryo UI");
+            HGDIOBJ oldFont = eventFont ? SelectObject(hdc, eventFont) : nullptr;
+            DrawTextW(hdc, eventName.c_str(), -1, &eventTextRect,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            if (eventFont)
+            {
+                SelectObject(hdc, oldFont);
+                DeleteObject(eventFont);
+            }
         }
+        else
+        {
+            const std::wstring repeatPrefix = L"繰り返し ";
+            const std::wstring repeatNumber =
+                std::to_wstring(b.repeatCount);
+            const std::wstring repeatSuffix = L" 回";
 
-        if (whiteBrush)
-            DeleteObject(whiteBrush);
+            // 「繰り返し」の文字を描画
+            RECT repeatTextRect =
+            {
+                x + 12,
+                y + 8,
+                x + w - 8,
+                y + headerH
+            };
 
-        if (borderPen)
-            DeleteObject(borderPen);
+            DrawTextW(
+                hdc,
+                repeatPrefix.c_str(),
+                -1,
+                &repeatTextRect,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE
+            );
 
-        // 白い枠の中に数値を描画
-        SetTextColor(hdc, RGB(30, 30, 30));
+            // 数値の位置と幅を計算
+            SIZE prefixSize{};
+            SIZE numberSize{};
 
-        RECT numberTextRect = numberBox;
-        numberTextRect.left += 2;
-        numberTextRect.right -= 2;
+            GetTextExtentPoint32W(
+                hdc,
+                repeatPrefix.c_str(),
+                static_cast<int>(repeatPrefix.size()),
+                &prefixSize
+            );
 
-        DrawTextW(
-            hdc,
-            repeatNumber.c_str(),
-            -1,
-            &numberTextRect,
-            DT_CENTER | DT_VCENTER |
-            DT_SINGLELINE | DT_NOPREFIX
-        );
+            GetTextExtentPoint32W(
+                hdc,
+                repeatNumber.c_str(),
+                static_cast<int>(repeatNumber.size()),
+                &numberSize
+            );
 
-        // 「回」を白文字で描画
-        SetTextColor(hdc, RGB(255, 255, 255));
+            const int boxLeft = x + 12 + prefixSize.cx;
+            const int boxWidth = (std::max)(
+                static_cast<int>(numberSize.cx) + 4,
+                30
+                );
 
-        RECT suffixRect = repeatTextRect;
-        suffixRect.left = boxLeft + boxWidth + 3;
+            const int boxTop = y + 3 + (headerH - 24) / 2;
 
-        DrawTextW(
-            hdc,
-            repeatSuffix.c_str(),
-            -1,
-            &suffixRect,
-            DT_LEFT | DT_VCENTER | DT_SINGLELINE
-        );
-      
+            RECT numberBox =
+            {
+                boxLeft,
+                boxTop,
+                boxLeft + boxWidth,
+                boxTop + 24
+            };
 
+            // 白い入力枠を描画
+            HBRUSH whiteBrush =
+                CreateSolidBrush(RGB(255, 255, 255));
+
+            HPEN borderPen =
+                CreatePen(PS_SOLID, 1, RGB(190, 190, 190));
+
+            if (whiteBrush && borderPen)
+            {
+                HGDIOBJ oldBoxBrush = SelectObject(hdc, whiteBrush);
+                HGDIOBJ oldBoxPen = SelectObject(hdc, borderPen);
+
+                RoundRect(
+                    hdc,
+                    numberBox.left,
+                    numberBox.top,
+                    numberBox.right,
+                    numberBox.bottom,
+                    8,
+                    8
+                );
+
+                SelectObject(hdc, oldBoxPen);
+                SelectObject(hdc, oldBoxBrush);
+            }
+
+            if (whiteBrush)
+                DeleteObject(whiteBrush);
+
+            if (borderPen)
+                DeleteObject(borderPen);
+
+            // 白い枠の中に数値を描画
+            SetTextColor(hdc, RGB(30, 30, 30));
+
+            RECT numberTextRect = numberBox;
+            numberTextRect.left += 2;
+            numberTextRect.right -= 2;
+
+            DrawTextW(
+                hdc,
+                repeatNumber.c_str(),
+                -1,
+                &numberTextRect,
+                DT_CENTER | DT_VCENTER |
+                DT_SINGLELINE | DT_NOPREFIX
+            );
+
+            // 「回」を白文字で描画
+            SetTextColor(hdc, RGB(255, 255, 255));
+
+            RECT suffixRect = repeatTextRect;
+            suffixRect.left = boxLeft + boxWidth + 3;
+
+            DrawTextW(
+                hdc,
+                repeatSuffix.c_str(),
+                -1,
+                &suffixRect,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE
+            );
+
+
+        }
         SelectObject(hdc, oldPen);
         SelectObject(hdc, oldBrush);
 

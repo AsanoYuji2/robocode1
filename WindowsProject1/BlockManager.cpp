@@ -16,6 +16,27 @@ namespace
 
     // Block.cpp draws these blocks wider than their default Block::w.
     // Use the same effective width when calculating a range selection.
+    bool IsEventContainer(BlockType type)
+    {
+        switch (type)
+        {
+        case BlockType::OnScannedRobot:
+        case BlockType::OnHitWall:
+        case BlockType::OnBulletHit:
+        case BlockType::OnHitByBullet:
+        case BlockType::OnHitRobot:
+        case BlockType::OnWin:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    bool IsContainerBlock(BlockType type)
+    {
+        return type == BlockType::Repeat || IsEventContainer(type);
+    }
+
     int GetRangeSelectionWidth(const Block& block)
     {
         switch (block.type)
@@ -50,6 +71,7 @@ void BlockManager::Initialize() {
 
     copiedBlocks.clear();
     copiedParents.clear();
+    copiedBodies.clear();
     hasCopiedBlock = false;
 
     // 初期ブロック
@@ -179,7 +201,7 @@ void BlockManager::DrawAll(HDC hdc) const
     for (int i = static_cast<int>(blocks.size()) - 1;
         i >= 0; --i)
     {
-        if (blocks[i].type == BlockType::Repeat)
+        if (IsContainerBlock(blocks[i].type))
             continue;
 
         if (HitBlock(blocks[i], world.x, world.y))
@@ -198,7 +220,7 @@ void BlockManager::DrawAll(HDC hdc) const
         for (int i = static_cast<int>(blocks.size()) - 1;
             i >= 0; --i)
         {
-            if (blocks[i].type != BlockType::Repeat)
+            if (!IsContainerBlock(blocks[i].type))
                 continue;
 
             if (HitBlock(blocks[i], world.x, world.y))
@@ -215,7 +237,7 @@ void BlockManager::DrawAll(HDC hdc) const
     // ========================================
     for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
     {
-        if (blocks[i].type != BlockType::Repeat)
+        if (!IsContainerBlock(blocks[i].type))
             continue;
 
         const bool isSelected =
@@ -240,7 +262,7 @@ void BlockManager::DrawAll(HDC hdc) const
     // ========================================
     for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
     {
-        if (blocks[i].type == BlockType::Repeat)
+        if (IsContainerBlock(blocks[i].type))
             continue;
 
         const bool isSelected =
@@ -331,7 +353,7 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
     for (int i = static_cast<int>(blocks.size()) - 1;
         i >= 0; --i)
     {
-        if (blocks[i].type == BlockType::Repeat)
+        if (IsContainerBlock(blocks[i].type))
             continue;
 
         if (HitBlock(blocks[i], world.x, world.y))
@@ -348,7 +370,7 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
         for (int i = static_cast<int>(blocks.size()) - 1;
             i >= 0; --i)
         {
-            if (blocks[i].type != BlockType::Repeat)
+            if (!IsContainerBlock(blocks[i].type))
                 continue;
 
             if (HitBlock(blocks[i], world.x, world.y))
@@ -421,7 +443,7 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
             dragBlocks.push_back(current);
 
             // Repeat の内側ブロックも移動対象にする
-            if (blocks[current].type == BlockType::Repeat &&
+            if (IsContainerBlock(blocks[current].type) &&
                 current < static_cast<int>(repeatBody.size()))
             {
                 int body = repeatBody[current];
@@ -544,7 +566,7 @@ void BlockManager::OnMouseMove(int x, int y)
         // 片方だけを移動するときは解除する。両方を動かすときは維持。
         for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
         {
-            if (blocks[static_cast<size_t>(i)].type != BlockType::Repeat ||
+            if (!IsContainerBlock(blocks[static_cast<size_t>(i)].type) ||
                 i >= static_cast<int>(repeatBody.size()))
                 continue;
 
@@ -580,7 +602,7 @@ void BlockManager::OnMouseMove(int x, int y)
     // まず、内側のブロックに必要な高さに戻す
     for (int i = 0; i < count; ++i)
     {
-        if (blocks[i].type != BlockType::Repeat)
+        if (!IsContainerBlock(blocks[i].type))
             continue;
 
         int body = repeatBody[i];
@@ -610,7 +632,7 @@ void BlockManager::OnMouseMove(int x, int y)
                 120,
                 blocks[lastBody].y
                 + blocks[lastBody].h
-                - blocks[i].y + 30);
+                - blocks[i].y + (IsEventContainer(blocks[i].type) ? 12 : 30));
         }
     }
 
@@ -619,11 +641,11 @@ void BlockManager::OnMouseMove(int x, int y)
     if (dragBlocks.size() == 1 &&
         selected >= 0 &&
         selected < count &&
-        blocks[selected].type != BlockType::Repeat)
+        !IsContainerBlock(blocks[selected].type))
     {
         for (int i = 0; i < count; ++i)
         {
-            if (blocks[i].type != BlockType::Repeat)
+            if (!IsContainerBlock(blocks[i].type))
                 continue;
 
             int body = repeatBody[i];
@@ -647,7 +669,7 @@ void BlockManager::OnMouseMove(int x, int y)
 
             const int targetY =
                 (body < 0)
-                ? blocks[i].y + 37
+                ? blocks[i].y + (IsEventContainer(blocks[i].type) ? 46 : 37)
                 : blocks[lastBody].y
                 + blocks[lastBody].h - TAB_HEIGHT;
 
@@ -662,7 +684,7 @@ void BlockManager::OnMouseMove(int x, int y)
             {
                 const int requiredHeight =
                     targetY + blocks[selected].h
-                    - blocks[i].y + 30;
+                    - blocks[i].y + (IsEventContainer(blocks[i].type) ? 12 : 30);
 
                 blocks[i].h = (std::max)(
                     blocks[i].h,
@@ -851,7 +873,7 @@ void BlockManager::SnapSelectedBlock()
     for (int i = 0; i < count; ++i)
     {
         if (!isMoving[static_cast<size_t>(i)] ||
-            blocks[static_cast<size_t>(i)].type != BlockType::Repeat ||
+            !IsContainerBlock(blocks[static_cast<size_t>(i)].type) ||
             i >= static_cast<int>(repeatBody.size()))
         {
             continue;
@@ -878,14 +900,14 @@ void BlockManager::SnapSelectedBlock()
     // ========================================
     // ② Repeat の内側への接続
     // ========================================
-    if (blocks[firstBlock].type != BlockType::Repeat)
+    if (!IsContainerBlock(blocks[firstBlock].type))
     {
         for (int i = 0; i < count; ++i)
         {
             if (isMoving[i])
                 continue;
 
-            if (blocks[i].type != BlockType::Repeat)
+            if (!IsContainerBlock(blocks[i].type))
                 continue;
 
             if (i >= static_cast<int>(repeatBody.size()))
@@ -952,11 +974,16 @@ void BlockManager::SnapSelectedBlock()
 
             blocks[i].h = (std::max)(
                 120,
-                bodyBottom - blocks[i].y + 30);
+                bodyBottom - blocks[i].y + (IsEventContainer(blocks[i].type) ? 12 : 30));
 
             return;
         }
     }
+
+    // イベントコンテナは外側の通常スタックには接続しない。
+    // 内側への接続処理だけを許可する。
+    if (IsEventContainer(blocks[firstBlock].type))
+        return;
 
     // ========================================
     // ③ 通常ブロックへの接続候補を探す
@@ -976,17 +1003,19 @@ void BlockManager::SnapSelectedBlock()
 
         const Block& target = blocks[static_cast<size_t>(i)];
         const Block& first = blocks[static_cast<size_t>(firstBlock)];
+        if (IsEventContainer(target.type))
+            continue;
 
         const int targetWidth = GetRangeSelectionWidth(target);
         const int firstWidth = GetRangeSelectionWidth(first);
 
         const int targetHeight = (std::max)(
             target.h,
-            target.type == BlockType::Repeat ? 120 : target.h);
+            IsContainerBlock(target.type) ? 120 : target.h);
 
         const int firstHeight = (std::max)(
             first.h,
-            first.type == BlockType::Repeat ? 120 : first.h);
+            IsContainerBlock(first.type) ? 120 : first.h);
 
         // CとAの矩形が重なっているか判定する
         const bool overlaps =
@@ -1019,6 +1048,8 @@ void BlockManager::SnapSelectedBlock()
             break;
 
         const Block& target = blocks[i];
+        if (IsEventContainer(target.type))
+            continue;
 
         // ----------------------------------------
         // ③-A 接続先の下に移動グループを接続
@@ -1259,7 +1290,7 @@ void BlockManager::AddBlock(BlockType type, int x, int y)
     block.y = y;
 
     // Repeatだけ高さを確保する
-    if (type == BlockType::Repeat)
+    if (IsContainerBlock(type))
         block.h = 120;
 
     AddBlock(block);
@@ -1273,7 +1304,7 @@ void BlockManager::AddBlock(const Block& source)
     SaveUndoState();
 
     Block block = source;
-    if (block.type == BlockType::Repeat && block.h < 120)
+    if (IsContainerBlock(block.type) && block.h < 120)
         block.h = 120;
 
     blocks.push_back(block);
@@ -1312,8 +1343,16 @@ bool BlockManager::DeleteBlockAt(int x, int y) {
             j < static_cast<int>(parent.size());
             ++j)
         {
-            if (parent[j] == current)
+            if (parent[j] == current &&
+                std::find(targets.begin(), targets.end(), j) == targets.end())
                 targets.push_back(j);
+        }
+        if (current >= 0 && current < static_cast<int>(repeatBody.size()))
+        {
+            const int body = repeatBody[static_cast<size_t>(current)];
+            if (body >= 0 && body < static_cast<int>(blocks.size()) &&
+                std::find(targets.begin(), targets.end(), body) == targets.end())
+                targets.push_back(body);
         }
     }
 
@@ -1342,17 +1381,16 @@ bool BlockManager::DeleteBlockAndChildren(int index)
             j < static_cast<int>(parent.size());
             ++j)
         {
-            if (parent[j] == current)
-            {
-                // 重複登録を防止
-                if (std::find(
-                    targets.begin(),
-                    targets.end(),
-                    j) == targets.end())
-                {
-                    targets.push_back(j);
-                }
-            }
+            if (parent[j] == current &&
+                std::find(targets.begin(), targets.end(), j) == targets.end())
+                targets.push_back(j);
+        }
+        if (current >= 0 && current < static_cast<int>(repeatBody.size()))
+        {
+            const int body = repeatBody[static_cast<size_t>(current)];
+            if (body >= 0 && body < static_cast<int>(blocks.size()) &&
+                std::find(targets.begin(), targets.end(), body) == targets.end())
+                targets.push_back(body);
         }
     }
 
@@ -1405,7 +1443,7 @@ bool BlockManager::ReplaceBlocks(
         const int body = newRepeatBodies[static_cast<size_t>(i)];
         if (body < -1 || body >= count || body == i)
             return false;
-        if (body != -1 && newBlocks[static_cast<size_t>(i)].type != BlockType::Repeat)
+        if (body != -1 && !IsContainerBlock(newBlocks[static_cast<size_t>(i)].type))
             return false;
     }
 
@@ -1517,6 +1555,33 @@ void BlockManager::DeleteBlocks(const std::vector<int>& indices) {
         }
     }
 
+    // コンテナ自体を削除した場合、専用ボディも削除対象に含める。
+    // OnHitWall などのイベント内ブロックが通常の run() へ孤立しないようにする。
+    bool addedContainerBody = true;
+    while (addedContainerBody)
+    {
+        addedContainerBody = false;
+        for (int i = 0; i < static_cast<int>(remove.size()); ++i)
+        {
+            if (!remove[static_cast<size_t>(i)] ||
+                !IsContainerBlock(blocks[static_cast<size_t>(i)].type) ||
+                i >= static_cast<int>(repeatBody.size()))
+                continue;
+
+            int body = repeatBody[static_cast<size_t>(i)];
+            for (int step = 0; body >= 0 && body < static_cast<int>(blocks.size()) &&
+                step < static_cast<int>(blocks.size()); ++step)
+            {
+                if (!remove[static_cast<size_t>(body)])
+                {
+                    remove[static_cast<size_t>(body)] = true;
+                    addedContainerBody = true;
+                }
+                body = GetChild(body);
+            }
+        }
+    }
+
     bool any = false;
 
     for (bool value : remove)
@@ -1563,7 +1628,13 @@ void BlockManager::DeleteBlocks(const std::vector<int>& indices) {
         else
             newParents[static_cast<size_t>(i)] = indexMap[static_cast<size_t>(oldParent)];
 
-        const int oldBody = newRepeatBodies[static_cast<size_t>(i)];
+        int oldBody = newRepeatBodies[static_cast<size_t>(i)];
+        // コンテナ内の先頭ブロックだけ削除された場合は、次のブロックを先頭に繰り上げる。
+        for (int steps = 0; oldBody >= 0 && oldBody < static_cast<int>(indexMap.size()) &&
+            remove[static_cast<size_t>(oldBody)] && steps < static_cast<int>(indexMap.size()); ++steps)
+        {
+            oldBody = GetChild(oldBody);
+        }
         if (oldBody < 0 || oldBody >= static_cast<int>(indexMap.size()) ||
             remove[static_cast<size_t>(oldBody)])
             newRepeatBodies[static_cast<size_t>(i)] = -1;
@@ -1618,7 +1689,7 @@ void BlockManager::UpdateRangeSelection(int x, int y) {
     {
         const Block& block = blocks[static_cast<size_t>(i)];
         const int width = GetRangeSelectionWidth(block);
-        const int height = (std::max)(block.h, block.type == BlockType::Repeat ? 120 : block.h);
+        const int height = (std::max)(block.h, IsContainerBlock(block.type) ? 120 : block.h);
 
         const bool intersects =
             block.x < right &&
@@ -1671,9 +1742,21 @@ bool BlockManager::CopySelectedBlock() {
         {
             int current = selection[i];
             int child = GetChild(current);
-
             if (child >= 0)
                 selection.push_back(child);
+
+            if (IsContainerBlock(blocks[static_cast<size_t>(current)].type) &&
+                current < static_cast<int>(repeatBody.size()))
+            {
+                int body = repeatBody[static_cast<size_t>(current)];
+                for (int steps = 0; body >= 0 && body < static_cast<int>(blocks.size()) &&
+                    steps < static_cast<int>(blocks.size()); ++steps)
+                {
+                    if (std::find(selection.begin(), selection.end(), body) == selection.end())
+                        selection.push_back(body);
+                    body = GetChild(body);
+                }
+            }
         }
     }
     else
@@ -1688,6 +1771,7 @@ bool BlockManager::CopySelectedBlock() {
 
     copiedBlocks.clear();
     copiedParents.clear();
+    copiedBodies.clear();
 
     std::vector<int> indexMap(
         blocks.size(),
@@ -1706,6 +1790,7 @@ bool BlockManager::CopySelectedBlock() {
 
         copiedBlocks.push_back(blocks[index]);
         copiedParents.push_back(-1);
+        copiedBodies.push_back(-1);
     }
 
     // �R�s�[���ɗ����̃u���b�N���܂܂��ꍇ�����ڑ����ێ�
@@ -1726,6 +1811,14 @@ bool BlockManager::CopySelectedBlock() {
             indexMap[oldParent] >= 0)
         {
             copiedParents[i] = indexMap[oldParent];
+        }
+
+        const int oldBody = oldIndex < static_cast<int>(repeatBody.size())
+            ? repeatBody[static_cast<size_t>(oldIndex)] : -1;
+        if (oldBody >= 0 && oldBody < static_cast<int>(indexMap.size()) &&
+            indexMap[static_cast<size_t>(oldBody)] >= 0)
+        {
+            copiedBodies[i] = indexMap[static_cast<size_t>(oldBody)];
         }
     }
 
@@ -1767,6 +1860,9 @@ bool BlockManager::PasteCopiedBlock(int x, int y) {
             parent.push_back(startIndex + copiedParent);
         else
             parent.push_back(-1);
+
+        const int copiedBody = i < copiedBodies.size() ? copiedBodies[i] : -1;
+        repeatBody.push_back(copiedBody >= 0 ? startIndex + copiedBody : -1);
 
         selectedBlocks.push_back(
             static_cast<int>(blocks.size()) - 1);

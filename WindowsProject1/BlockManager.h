@@ -93,6 +93,7 @@ private:
     POINT selectionEnd = { 0, 0 };
     std::vector<Block> copiedBlocks;
     std::vector<int> copiedParents;
+    std::vector<int> copiedBodies;
     bool hasCopiedBlock = false;
 
     struct BlockState

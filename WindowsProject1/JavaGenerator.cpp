@@ -23,7 +23,24 @@ namespace
     {
         Block block{};
         bool syntheticRepeatEnd = false;
+        int eventContext = -1; // -1: run(), otherwise BlockType event container
     };
+
+    bool IsEventContainer(BlockType type)
+    {
+        switch (type)
+        {
+        case BlockType::OnScannedRobot:
+        case BlockType::OnHitWall:
+        case BlockType::OnBulletHit:
+        case BlockType::OnHitByBullet:
+        case BlockType::OnHitRobot:
+        case BlockType::OnWin:
+            return true;
+        default:
+            return false;
+        }
+    }
 
     struct JavaIdentifiers
     {
@@ -422,10 +439,52 @@ namespace
         if (hasParentGraph) safeParents = parents;
 
         std::vector<int> safeRepeatBodies(count, -1);
-        if (repeatBodies.size() == count) safeRepeatBodies = repeatBodies;
+        if (repeatBodies.size() == count)
+        {
+            safeRepeatBodies = repeatBodies;
+        }
+        else
+        {
+            // Older callers may provide a valid parent graph but no separate
+            // container-body array. Recover event bodies from their visible
+            // placement so event contents still go to the correct callback.
+            for (size_t e = 0; e < count; ++e)
+            {
+                if (!IsEventContainer(blocks[e].type))
+                    continue;
+                const Block& event = blocks[e];
+                const int eventWidth = (std::max)(event.w, 250);
+                const int eventHeight = (std::max)(event.h, 120);
+                int best = -1;
+                int bestY = (std::numeric_limits<int>::max)();
+                for (size_t b = 0; b < count; ++b)
+                {
+                    if (b == e || IsEventContainer(blocks[b].type))
+                        continue;
+                    const Block& candidate = blocks[b];
+                    if (candidate.x < event.x + 24 ||
+                        candidate.x >= event.x + eventWidth ||
+                        candidate.y < event.y + 46 ||
+                        candidate.y + (std::max)(candidate.h, 1) > event.y + eventHeight)
+                        continue;
+                    const int distance = candidate.y - (event.y + 46);
+                    if (distance < bestY)
+                    {
+                        bestY = distance;
+                        best = static_cast<int>(b);
+                    }
+                }
+                if (best >= 0)
+                    safeRepeatBodies[e] = best;
+            }
+        }
 
         if (!hasParentGraph)
         {
+            // Compatibility path for callers using the older ExportJavaCustom
+            // overload (which does not pass parent/repeat-body arrays). Infer
+            // event membership from the visible event-container rectangle so
+            // blocks placed inside OnWin etc. are not incorrectly emitted in run().
             std::vector<size_t> order(count);
             for (size_t i = 0; i < count; ++i) order[i] = i;
             std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b)
@@ -434,11 +493,45 @@ namespace
                     if (blocks[a].x != blocks[b].x) return blocks[a].x < blocks[b].x;
                     return a < b;
                 });
+
             for (size_t index : order)
             {
+                const Block& block = blocks[index];
+                // Event markers define methods; they are never executable run blocks.
+                if (IsEventContainer(block.type))
+                    continue;
+
+                int eventContext = -1;
+                int bestArea = (std::numeric_limits<int>::max)();
+                for (size_t e = 0; e < count; ++e)
+                {
+                    if (!IsEventContainer(blocks[e].type))
+                        continue;
+                    const Block& event = blocks[e];
+                    const int eventWidth = (std::max)(event.w, 250);
+                    const int eventHeight = (std::max)(event.h, 120);
+                    // Keep the test inside the C-shaped body, below the title
+                    // header and away from the left wall.
+                    if (block.x < event.x + 24 ||
+                        block.x >= event.x + eventWidth ||
+                        block.y < event.y + 46 ||
+                        block.y + (std::max)(block.h, 1) > event.y + eventHeight)
+                        continue;
+
+                    const int area = eventWidth * eventHeight;
+                    if (area < bestArea)
+                    {
+                        bestArea = area;
+                        eventContext = static_cast<int>(event.type);
+                    }
+                }
+
+                const size_t outputStart = output.size();
                 if (!ExpandSingleBlockOrCall(
-                    blocks[index], functions, callStack, output, error, depth))
+                    block, functions, callStack, output, error, depth))
                     return false;
+                for (size_t outIndex = outputStart; outIndex < output.size(); ++outIndex)
+                    output[outIndex].eventContext = eventContext;
             }
             return true;
         }
@@ -459,14 +552,14 @@ namespace
         for (size_t i = 0; i < count; ++i)
         {
             const int body = safeRepeatBodies[i];
-            if (blocks[i].type == BlockType::Repeat &&
+            if ((blocks[i].type == BlockType::Repeat || IsEventContainer(blocks[i].type)) &&
                 body >= 0 && body < static_cast<int>(count))
                 isRepeatBodyRoot[static_cast<size_t>(body)] = true;
         }
 
         std::vector<bool> visited(count, false);
-        std::function<bool(int)> appendChain;
-        appendChain = [&](int start) -> bool
+        std::function<bool(int, int)> appendChain;
+        appendChain = [&](int start, int eventContext) -> bool
             {
                 int current = start;
                 for (size_t step = 0;
@@ -477,23 +570,39 @@ namespace
                     visited[static_cast<size_t>(current)] = true;
                     const Block& block = blocks[static_cast<size_t>(current)];
 
+                    // イベントブロック自身はJava文として出力せず、
+                    // 専用ボディを対応するイベントメソッドへ振り分ける。
+                    if (IsEventContainer(block.type))
+                    {
+                        const int body = safeRepeatBodies[static_cast<size_t>(current)];
+                        if (body >= 0 && body < static_cast<int>(count))
+                        {
+                            if (!appendChain(body, static_cast<int>(block.type))) return false;
+                        }
+                        // イベントブロックの下側は通常接続ではない。
+                        break;
+                    }
+
                     if (IsUserFunctionCall(block))
                     {
+                        const size_t outputStart = output.size();
                         if (!ExpandSingleBlockOrCall(
                             block, functions, callStack, output, error, depth))
                             return false;
+                        for (size_t outIndex = outputStart; outIndex < output.size(); ++outIndex)
+                            output[outIndex].eventContext = eventContext;
                     }
                     else
                     {
-                        output.push_back({ block, false });
+                        output.push_back({ block, false, eventContext });
                         const int body = safeRepeatBodies[static_cast<size_t>(current)];
                         if (block.type == BlockType::Repeat &&
                             body >= 0 && body < static_cast<int>(count))
                         {
-                            if (!appendChain(body)) return false;
+                            if (!appendChain(body, eventContext)) return false;
                             Block endBlock{};
                             endBlock.type = BlockType::EndRepeat;
-                            output.push_back({ endBlock, true });
+                            output.push_back({ endBlock, true, eventContext });
                         }
                     }
 
@@ -518,7 +627,7 @@ namespace
             });
 
         for (int root : roots)
-            if (!appendChain(root)) return false;
+            if (!appendChain(root, -1)) return false;
 
         std::vector<int> leftovers;
         for (size_t i = 0; i < count; ++i)
@@ -532,7 +641,7 @@ namespace
                 return a < b;
             });
         for (int item : leftovers)
-            if (!appendChain(item)) return false;
+            if (!appendChain(item, -1)) return false;
 
         return true;
     }
@@ -1093,11 +1202,25 @@ bool ExportJavaCustom(
     std::vector<ExpandedBlock> hitWallBlocks;
     std::vector<ExpandedBlock> hitByBulletBlocks;
     std::vector<ExpandedBlock> hitRobotBlocks;
+    std::vector<ExpandedBlock> bulletHitBlocks;
     std::vector<ExpandedBlock> winBlocks;
 
     for (const ExpandedBlock& item : expanded)
     {
-        if (!item.syntheticRepeatEnd)
+        if (item.eventContext >= 0)
+        {
+            switch (static_cast<BlockType>(item.eventContext))
+            {
+            case BlockType::OnScannedRobot: scannedRobotBlocks.push_back(item); break;
+            case BlockType::OnHitWall: hitWallBlocks.push_back(item); break;
+            case BlockType::OnBulletHit: bulletHitBlocks.push_back(item); break;
+            case BlockType::OnHitByBullet: hitByBulletBlocks.push_back(item); break;
+            case BlockType::OnHitRobot: hitRobotBlocks.push_back(item); break;
+            case BlockType::OnWin: winBlocks.push_back(item); break;
+            default: runBlocks.push_back(item); break;
+            }
+        }
+        else if (!item.syntheticRepeatEnd)
         {
             if (item.block.type == BlockType::KeepAwayRadarFire ||
                 item.block.type == BlockType::BodyBlowFire ||
@@ -1181,7 +1304,10 @@ bool ExportJavaCustom(
     // 4. onBulletHit メソッドの出力
     code +=
         "    @Override\n"
-        "    public void onBulletHit(BulletHitEvent e) {}\n\n";
+        "    public void onBulletHit(BulletHitEvent e)\n"
+        "    {\n";
+    EmitBlockSequence(bulletHitBlocks, identifiers, code, 2);
+    code += "    }\n\n";
 
     // 5. onHitByBullet メソッドの出力
     code +=
