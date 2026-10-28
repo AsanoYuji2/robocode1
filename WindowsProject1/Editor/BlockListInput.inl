@@ -52,10 +52,10 @@ LRESULT CALLBACK BlockListProc(
         }
 
         // ホバー対象が変わった場合だけ再描画
-        if (g_hoveredBlockListItem != index)
+        if (!g_draggingFromList &&
+            g_hoveredBlockListItem != index)
         {
             g_hoveredBlockListItem = index;
-
             InvalidateRect(hwnd, nullptr, FALSE);
         }
 
@@ -94,14 +94,15 @@ LRESULT CALLBACK BlockListProc(
         GetClientRect(hwnd, &rc);
 
         // リストが開いていて、かつ表示されているときのみ右端でのリサイズを許可
-        if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList) && abs(p.x - rc.right) <= 6)
+        if (g_showBlockList &&
+            g_blockList &&
+            IsWindowVisible(g_blockList) &&
+            abs(p.x - rc.right) <= 6)
         {
             g_isResizingList = true;
             SetCapture(g_mainWindow);
             return 0;
         }
-
-    
 
         // クリックされた項目を取得
         LRESULT index = SendMessageW(
@@ -116,30 +117,51 @@ LRESULT CALLBACK BlockListProc(
             index < static_cast<LRESULT>(
                 g_visibleBlockTypes.size()))
         {
-            g_dragBlockType = g_visibleBlockTypes[static_cast<size_t>(index)];
+            g_dragBlockType =
+                g_visibleBlockTypes[static_cast<size_t>(index)];
+
             g_dragBlockFunctionName.clear();
-            if (index < static_cast<LRESULT>(g_visibleFunctionNames.size()))
-                g_dragBlockFunctionName = g_visibleFunctionNames[static_cast<size_t>(index)];
+
+            if (index < static_cast<LRESULT>(
+                g_visibleFunctionNames.size()))
+            {
+                g_dragBlockFunctionName =
+                    g_visibleFunctionNames[
+                        static_cast<size_t>(index)];
+            }
 
             g_draggingFromList = true;
 
-            // マウス位置をメインウィンドウ座標へ変換
-            POINT p = {
+            // リストボックス座標からメインウィンドウ座標へ変換
+            POINT dragPoint = {
                 GET_X_LPARAM(lp),
                 GET_Y_LPARAM(lp)
             };
 
-            ClientToScreen(hwnd, &p);
-            ScreenToClient(g_mainWindow, &p);
+            ClientToScreen(hwnd, &dragPoint);
+            ScreenToClient(g_mainWindow, &dragPoint);
 
-            g_listDragPoint = p;
+            g_listDragPoint = dragPoint;
 
-            // メインウィンドウでドラッグ操作を受け取る
+            // ドラッグ中のマウス操作をメインウィンドウで受け取る
             SetCapture(g_mainWindow);
 
-            InvalidateEditor();
-        }
+            if (g_dragPreviewWnd)
+            {
+                POINT screenPoint = g_listDragPoint;
+                ClientToScreen(g_mainWindow, &screenPoint);
 
+                SetWindowPos(
+                    g_dragPreviewWnd,
+                    HWND_TOPMOST,
+                    screenPoint.x - 84,
+                    screenPoint.y - 15,
+                    168,
+                    30,
+                    SWP_NOACTIVATE | SWP_SHOWWINDOW
+                );
+            }
+        }
         break;
     }
     }
@@ -154,78 +176,78 @@ LRESULT CALLBACK BlockListProc(
 // ============================================================
 // カテゴリボタンを作成
 // ============================================================
-LRESULT CALLBACK CategoryButtonProc(
-    HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
-{
-    int index = -1;
-
-    for (int i = 0; i < CATEGORY_COUNT; ++i)
+    LRESULT CALLBACK CategoryButtonProc(
+        HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     {
-        if (g_categoryButtons[i] == hwnd)
+        int index = -1;
+
+        for (int i = 0; i < CATEGORY_COUNT; ++i)
         {
-            index = i;
-            break;
-        }
-    }
-
-    if (index < 0 || !g_oldCategoryProcs[index])
-    {
-        return DefWindowProcW(hwnd, msg, wp, lp);
-    }
-
-    switch (msg)
-    {
-    case WM_MOUSEMOVE:
-    {
-        if (g_hoveredCategory != index)
-        {
-            int previousCategory = g_hoveredCategory;
-
-            g_hoveredCategory = index;
-
-            // 前のボタンの光を消す
-            if (previousCategory >= 0 &&
-                previousCategory < CATEGORY_COUNT &&
-                g_categoryButtons[previousCategory])
+            if (g_categoryButtons[i] == hwnd)
             {
-                InvalidateRect(
-                    g_categoryButtons[previousCategory],
-                    nullptr,
-                    TRUE);
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0 || !g_oldCategoryProcs[index])
+        {
+            return DefWindowProcW(hwnd, msg, wp, lp);
+        }
+
+        switch (msg)
+        {
+        case WM_MOUSEMOVE:
+        {
+            if (g_hoveredCategory != index)
+            {
+                int previousCategory = g_hoveredCategory;
+
+                g_hoveredCategory = index;
+
+                // 前のボタンの光を消す
+                if (previousCategory >= 0 &&
+                    previousCategory < CATEGORY_COUNT &&
+                    g_categoryButtons[previousCategory])
+                {
+                    InvalidateRect(
+                        g_categoryButtons[previousCategory],
+                        nullptr,
+                        TRUE);
+                }
+
+                // 現在のボタンを再描画
+                InvalidateRect(hwnd, nullptr, TRUE);
             }
 
-            // 現在のボタンを再描画
-            InvalidateRect(hwnd, nullptr, TRUE);
+            TRACKMOUSEEVENT tme{};
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hwnd;
+
+            TrackMouseEvent(&tme);
+            break;
         }
 
-        TRACKMOUSEEVENT tme{};
-        tme.cbSize = sizeof(tme);
-        tme.dwFlags = TME_LEAVE;
-        tme.hwndTrack = hwnd;
-
-        TrackMouseEvent(&tme);
-        break;
-    }
-
-    case WM_MOUSELEAVE:
-    {
-        if (g_hoveredCategory == index)
+        case WM_MOUSELEAVE:
         {
-            g_hoveredCategory = -1;
+            if (g_hoveredCategory == index)
+            {
+                g_hoveredCategory = -1;
 
-            // 光を消して再描画
-            InvalidateRect(hwnd, nullptr, TRUE);
+                // 光を消して再描画
+                InvalidateRect(hwnd, nullptr, TRUE);
+            }
+            break;
         }
-        break;
-    }
-    }
+        }
 
-    return CallWindowProcW(
-        g_oldCategoryProcs[index],
-        hwnd,
-        msg,
-        wp,
-        lp);
+        return CallWindowProcW(
+            g_oldCategoryProcs[index],
+            hwnd,
+            msg,
+            wp,
+            lp);
 }
 
 

@@ -80,6 +80,7 @@ bool g_showBlockList = false;
 bool g_draggingFromList = false;
 bool g_panning = false;
 bool g_isResizingList = false;
+HWND g_dragPreviewWnd = nullptr;
 
 int g_listWidth = 220;
 

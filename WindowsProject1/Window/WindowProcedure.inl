@@ -1,3 +1,61 @@
+
+LRESULT CALLBACK DragPreviewProc(
+    HWND hwnd,
+    UINT msg,
+    WPARAM wParam,
+    LPARAM lParam)
+{
+    switch (msg)
+    {
+    case WM_NCHITTEST:
+        // マウス操作をプレビューウィンドウが横取りしない
+        return HTTRANSPARENT;
+
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+
+    case WM_ERASEBKGND:
+        return TRUE;
+
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps{};
+        HDC hdc = BeginPaint(hwnd, &ps);
+
+        RECT rc{};
+        GetClientRect(hwnd, &rc);
+
+        HBRUSH brush = CreateSolidBrush(
+            CATEGORY_COLORS[
+                static_cast<int>(g_selectedCategory)
+            ]);
+
+        FillRect(hdc, &rc, brush);
+        DeleteObject(brush);
+
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(255, 255, 255));
+
+        std::wstring name = g_dragBlockFunctionName.empty()
+            ? GetBlockName(g_dragBlockType)
+            : L"自作関数： " + g_dragBlockFunctionName;
+
+        DrawTextW(
+            hdc,
+            name.c_str(),
+            -1,
+            &rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE
+        );
+
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    }
+
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
 LRESULT CALLBACK WndProc(
     HWND hwnd,
     UINT msg,
@@ -13,6 +71,31 @@ LRESULT CALLBACK WndProc(
     case WM_CREATE:
     {
         g_mainWindow = hwnd;
+
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = DragPreviewProc;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.lpszClassName = L"BlockDragPreviewWindow";
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+
+        RegisterClassExW(&wc);
+
+        g_dragPreviewWnd = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+            WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
+            L"BlockDragPreviewWindow",
+            L"",
+            WS_POPUP,
+            0, 0, 168, 30,
+            hwnd,
+            nullptr,
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
+        if (g_dragPreviewWnd)
+            ShowWindow(g_dragPreviewWnd, SW_HIDE);
 
         g_manager.Initialize();
         // 関数専用の管理役は初期ブロックを作らず、空の状態から始める。
@@ -992,23 +1075,37 @@ LRESULT CALLBACK WndProc(
             }
         }
 
+
         // リストからブロックをドラッグ中
         if (g_draggingFromList)
         {
+            // 現在の位置を更新（メインウィンドウのクライアント座標）
             g_listDragPoint = p;
 
-            // ドラッグ中の表示に必要な親ウィンドウだけを再描画
-            RECT dragRect = {
-                g_listDragPoint.x + 12,
-                g_listDragPoint.y + 12,
-                g_listDragPoint.x + 180,
-                g_listDragPoint.y + 42
-            };
+            // メインウィンドウの座標をスクリーン座標に変換
+            POINT screenPoint = g_listDragPoint;
+            ClientToScreen(hwnd, &screenPoint);
 
-            InvalidateRect(hwnd, &dragRect, FALSE);
+            // プレビュー専用ウィンドウをカーソル位置へ移動
+            if (g_dragPreviewWnd)
+            {
+                SetWindowPos(
+                    g_dragPreviewWnd,
+                    HWND_TOPMOST,
+                    screenPoint.x - 84,
+                    screenPoint.y - 15,
+                    168,
+                    30,
+                    SWP_NOACTIVATE | SWP_SHOWWINDOW
+                );
+
+                InvalidateRect(g_dragPreviewWnd, nullptr, FALSE);
+            }
 
             return 0;
         }
+
+     
 
 
         ActiveManager().OnMouseMove(p.x, p.y);
@@ -1358,20 +1455,30 @@ LRESULT CALLBACK WndProc(
             // ドラッグ状態を先に解除
             g_draggingFromList = false;
 
+            // ドラッグプレビューを非表示にする
+            if (g_dragPreviewWnd)
+                ShowWindow(g_dragPreviewWnd, SW_HIDE);
+
             if (IsCanvasPoint(p))
             {
-                // キャンバス座標をブロックのワールド座標に変換
-                POINT world = ActiveManager().ScreenToWorld(
-                    p.x,
-                    p.y
+                //// キャンバス座標をブロックのワールド座標に変換
+                //POINT world = ActiveManager().ScreenToWorld(
+                //    p.x,
+                //    p.y
+                //);
+
+                // ブロックの幅168、高さ30の半分を引く
+                POINT worldTopLeft = ActiveManager().ScreenToWorld(
+                    p.x - 84,
+                    p.y - 15
                 );
 
                 // ドロップ位置にブロックを追加。
                 // 自作関数の場合は、関数名も一緒に保存する。
                 Block newBlock{};
                 newBlock.type = g_dragBlockType;
-                newBlock.x = world.x;
-                newBlock.y = world.y;
+                newBlock.x = worldTopLeft.x;
+                newBlock.y = worldTopLeft.y;
                 if (!g_dragBlockFunctionName.empty())
                     SetUserFunctionCallName(newBlock, g_dragBlockFunctionName);
                 ActiveManager().AddBlock(newBlock);
@@ -1445,6 +1552,10 @@ LRESULT CALLBACK WndProc(
         g_dragBlockFunctionName.clear();
         g_isResizingList = false;
 
+        if (g_dragPreviewWnd)
+            ShowWindow(g_dragPreviewWnd, SW_HIDE);
+
+
         return 0;
     }
 
@@ -1505,40 +1616,7 @@ LRESULT CALLBACK WndProc(
                 functionGuideRect, RGB(72, 82, 98), 12, false);
         }
 
-        // ④ ドラッグ中のブロック名を表示
-        if (g_draggingFromList)
-        {
-            std::wstring name = g_dragBlockFunctionName.empty()
-                ? GetBlockName(g_dragBlockType)
-                : L"自作関数： " + g_dragBlockFunctionName;
-
-            RECT dragRect = {
-                g_listDragPoint.x + 12,
-                g_listDragPoint.y + 12,
-                g_listDragPoint.x + 180,
-                g_listDragPoint.y + 42
-            };
-
-            HBRUSH dragBrush = CreateSolidBrush(
-                CATEGORY_COLORS[
-                    static_cast<int>(g_selectedCategory)
-                ]
-            );
-
-            FillRect(memDC, &dragRect, dragBrush);
-            DeleteObject(dragBrush);
-
-            SetBkMode(memDC, TRANSPARENT);
-            SetTextColor(memDC, RGB(255, 255, 255));
-
-            DrawTextW(
-                memDC,
-                name.c_str(),
-                -1,
-                &dragRect,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE
-            );
-        }
+        
 
         // ⑤ ズーム表示
         wchar_t zoomText[64]{};
