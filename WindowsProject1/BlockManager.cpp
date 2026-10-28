@@ -972,9 +972,51 @@ void BlockManager::SnapSelectedBlock()
             const int bodyBottom =
                 blocks[lastBlock].y + blocks[lastBlock].h;
 
+            // Repeat の高さを更新する
             blocks[i].h = (std::max)(
                 120,
-                bodyBottom - blocks[i].y + (IsEventContainer(blocks[i].type) ? 12 : 30));
+                bodyBottom - blocks[i].y
+                + (IsEventContainer(blocks[i].type) ? 12 : 30));
+
+            // Repeat の下につながるブロックを、
+            // 更新後の下端に合わせる。
+            // イベントコンテナには適用しない。
+            if (blocks[i].type == BlockType::Repeat)
+            {
+                const int outsideChild = GetChild(i);
+
+                if (outsideChild >= 0 &&
+                    outsideChild < count &&
+                    !isMoving[static_cast<size_t>(outsideChild)])
+                {
+                    const int targetY =
+                        blocks[i].y + blocks[i].h - TAB_HEIGHT;
+
+                    const int shiftY =
+                        targetY - blocks[outsideChild].y;
+
+                    std::vector<bool> shifted(
+                        static_cast<size_t>(count), false);
+
+                    int child = outsideChild;
+
+                    for (int step = 0;
+                        child >= 0 && child < count && step < count;
+                        ++step)
+                    {
+                        if (shifted[static_cast<size_t>(child)] ||
+                            isMoving[static_cast<size_t>(child)])
+                        {
+                            break;
+                        }
+
+                        shifted[static_cast<size_t>(child)] = true;
+                        blocks[static_cast<size_t>(child)].y += shiftY;
+
+                        child = GetChild(child);
+                    }
+                }
+            }
 
             return;
         }
