@@ -327,13 +327,35 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
 
     int hitIndex = -1;
 
+    // ① 通常ブロックを優先して判定する
     for (int i = static_cast<int>(blocks.size()) - 1;
         i >= 0; --i)
     {
+        if (blocks[i].type == BlockType::Repeat)
+            continue;
+
         if (HitBlock(blocks[i], world.x, world.y))
         {
             hitIndex = i;
             break;
+        }
+    }
+
+    // ② 通常ブロックが見つからなかった場合だけ、
+    //    Repeat ブロックを判定する
+    if (hitIndex == -1)
+    {
+        for (int i = static_cast<int>(blocks.size()) - 1;
+            i >= 0; --i)
+        {
+            if (blocks[i].type != BlockType::Repeat)
+                continue;
+
+            if (HitBlock(blocks[i], world.x, world.y))
+            {
+                hitIndex = i;
+                break;
+            }
         }
     }
 
@@ -824,6 +846,32 @@ void BlockManager::SnapSelectedBlock()
     if (movingBlocks.empty())
         return;
 
+    // Repeat の内部ブロックも移動対象として登録する。
+  // movingBlocks の順序は外側の接続順のまま維持する。
+    for (int i = 0; i < count; ++i)
+    {
+        if (!isMoving[static_cast<size_t>(i)] ||
+            blocks[static_cast<size_t>(i)].type != BlockType::Repeat ||
+            i >= static_cast<int>(repeatBody.size()))
+        {
+            continue;
+        }
+
+        int body = repeatBody[static_cast<size_t>(i)];
+
+        for (int step = 0;
+            body >= 0 && body < count && step < count;
+            ++step)
+        {
+            if (isMoving[static_cast<size_t>(body)])
+                break;
+
+            isMoving[static_cast<size_t>(body)] = true;
+            body = GetChild(body);
+        }
+    }
+
+
     const int firstBlock = movingBlocks.front();
     const int lastBlock = movingBlocks.back();
 
@@ -880,10 +928,13 @@ void BlockManager::SnapSelectedBlock()
             const int moveX = targetX - blocks[firstBlock].x;
             const int moveY = targetY - blocks[firstBlock].y;
 
-            for (int index : movingBlocks)
+            for (int index = 0; index < count; ++index)
             {
-                blocks[index].x += moveX;
-                blocks[index].y += moveY;
+                if (!isMoving[static_cast<size_t>(index)])
+                    continue;
+
+                blocks[static_cast<size_t>(index)].x += moveX;
+                blocks[static_cast<size_t>(index)].y += moveY;
             }
 
             if (firstBody < 0)
@@ -1049,10 +1100,13 @@ void BlockManager::SnapSelectedBlock()
             targetY - blocks[firstBlock].y;
 
         // CおよびCにつながるブロックをまとめて移動
-        for (int index : movingBlocks)
+        for (int index = 0; index < count; ++index)
         {
-            blocks[index].x += moveX;
-            blocks[index].y += moveY;
+            if (!isMoving[static_cast<size_t>(index)])
+                continue;
+
+            blocks[static_cast<size_t>(index)].x += moveX;
+            blocks[static_cast<size_t>(index)].y += moveY;
         }
 
         // 既存の子Bがあれば、Cの下に接続できる位置へ移動
@@ -1112,10 +1166,13 @@ void BlockManager::SnapSelectedBlock()
         - blocks[lastBlock].h + TAB_HEIGHT
         - blocks[lastBlock].y;
 
-    for (int index : movingBlocks)
+    for (int index = 0; index < count; ++index)
     {
-        blocks[index].x += moveX;
-        blocks[index].y += moveY;
+        if (!isMoving[static_cast<size_t>(index)])
+            continue;
+
+        blocks[static_cast<size_t>(index)].x += moveX;
+        blocks[static_cast<size_t>(index)].y += moveY;
     }
 
     // 移動グループ → 接続先
