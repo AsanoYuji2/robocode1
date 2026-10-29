@@ -1322,10 +1322,8 @@ LRESULT CALLBACK WndProc(
         {
             const Block& block = blocks[i];
 
-            if (world.x >= block.x &&
-                world.x < block.x + block.w &&
-                world.y >= block.y &&
-                world.y < block.y + block.h)
+            // 描画時と同じ HitBlock 判定を使用する
+            if (HitBlock(block, world.x, world.y))
             {
                 hitBlock = true;
                 break;
