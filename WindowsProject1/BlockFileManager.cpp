@@ -96,8 +96,7 @@ namespace
         return value >=
             static_cast<std::int32_t>(BlockType::Move)
             && value <=
-            static_cast<std::int32_t>(
-                BlockType::ChangeVariable);
+            static_cast<std::int32_t>(BlockType::OnWin);
     }
 
     bool IsValidConditionType(std::int32_t value)
@@ -106,7 +105,7 @@ namespace
             static_cast<std::int32_t>(ConditionType::Always)
             && value <=
             static_cast<std::int32_t>(
-                ConditionType::VariableNotEqual);
+                ConditionType::BooleanVariable);
     }
 
     bool IsValidParentTree(const std::vector<int>& parents)
