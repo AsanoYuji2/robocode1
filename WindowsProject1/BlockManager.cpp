@@ -32,6 +32,19 @@ namespace
         }
     }
 
+    bool HasEventType(
+        const std::vector<Block>& blocks,
+        BlockType type)
+    {
+        for (const Block& block : blocks)
+        {
+            if (block.type == type)
+                return true;
+        }
+
+        return false;
+    }
+
     bool IsContainerBlock(BlockType type)
     {
         return type == BlockType::Repeat || IsEventContainer(type);
@@ -1301,13 +1314,27 @@ void BlockManager::AddBlock(BlockType type, int x, int y)
 // 関数呼び出しブロックなども1回の操作で取り消せる。
 void BlockManager::AddBlock(const Block& source)
 {
+    const Block& block = source;
+
+    // 自作関数内ではイベントブロックを追加できない
+    if (IsEventContainer(block.type) && !eventBlocksAllowed)
+        return;
+
+    // 同じ種類のイベントブロックは1個だけ
+    if (IsEventContainer(block.type) &&
+        HasEventType(blocks, block.type))
+    {
+        return;
+    }
+
     SaveUndoState();
 
-    Block block = source;
-    if (IsContainerBlock(block.type) && block.h < 120)
-        block.h = 120;
+    Block newBlock = source;
 
-    blocks.push_back(block);
+    if (IsContainerBlock(newBlock.type) && newBlock.h < 120)
+        newBlock.h = 120;
+
+    blocks.push_back(newBlock);
     parent.push_back(-1);
     repeatBody.push_back(-1);
 }
@@ -1988,4 +2015,9 @@ int BlockManager::GetDraggedBlockIndex() const
     }
 
     return selected;
+}
+
+void BlockManager::SetEventBlocksAllowed(bool allowed)
+{
+    eventBlocksAllowed = allowed;
 }

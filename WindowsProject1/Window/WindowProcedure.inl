@@ -97,11 +97,21 @@ LRESULT CALLBACK WndProc(
         if (g_dragPreviewWnd)
             ShowWindow(g_dragPreviewWnd, SW_HIDE);
 
+
         g_manager.Initialize();
-        // 関数専用の管理役は初期ブロックを作らず、空の状態から始める。
+
+        // メインではイベントブロックを使用できる
+        g_manager.SetEventBlocksAllowed(true);
+
+        // 関数編集用の管理役は空の状態から始める
         g_functionManager.ReplaceBlocks({}, {});
+
+        // 自作関数の中ではイベントブロックを使用できない
+        g_functionManager.SetEventBlocksAllowed(false);
+
         ReloadUserFunctions();
         UpdateView();
+
 
         // ==========================================
         // 左サイドバー上部に「メイン」「関数」タブを作成

@@ -70,6 +70,7 @@ public:
     bool IsSelectingRange() const;
     const std::vector<int>& GetRepeatBodies() const;
 
+    void SetEventBlocksAllowed(bool allowed);
 private:
     std::vector<int> dragBlocks;
     std::vector<Block> blocks;
@@ -114,4 +115,6 @@ private:
     void PushUndoState(const BlockState& state);
     void SaveUndoState();
     std::vector<int> repeatBody;
+
+    bool eventBlocksAllowed = true;
 };
