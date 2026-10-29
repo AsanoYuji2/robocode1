@@ -264,13 +264,21 @@ bool OpenUserFunctionEditor(const std::wstring& name)
             return false;
     }
 
+
     UserDefinedFunction function;
-    if (!LoadUserFunction(name, function))
+
+    const int functionIndex = FindUserFunctionIndex(name);
+
+    if (functionIndex < 0)
     {
-        MessageBoxW(g_mainWindow, L"関数を読み込めませんでした。ファイルが壊れていないか確認してください。",
+        MessageBoxW(g_mainWindow,
+            L"関数が一覧に見つかりません。プロジェクトを開き直してください。",
             L"読み込みエラー", MB_OK | MB_ICONERROR);
         return false;
     }
+
+    function = g_userFunctions[static_cast<size_t>(functionIndex)];
+
 
     if (!g_functionManager.ReplaceBlocks(function.blocks, function.parents, function.repeatBodies))
     {

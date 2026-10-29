@@ -35,8 +35,13 @@ bool SaveProject(HWND hwnd)
         ActiveManager().GetParents()))
         return false;
 
-    return SaveFunctionCallMetadata(path, ActiveManager().GetBlocks()) &&
-        SaveRepeatBodyMetadata(path, ActiveManager().GetRepeatBodies());
+    if (!SaveFunctionCallMetadata(path, ActiveManager().GetBlocks()))
+        return false;
+
+    if (!SaveRepeatBodyMetadata(path, ActiveManager().GetRepeatBodies()))
+        return false;
+
+    return SaveProjectUserFunctions(path, g_userFunctions);
 }
 
 // ============================================================
@@ -73,6 +78,27 @@ bool LoadProject(HWND hwnd)
     if (!GetOpenFileNameW(&ofn))
         return false;
 
+    std::vector<UserDefinedFunction> loadedFunctions;
+
+    std::filesystem::path functionDirectory =
+        std::filesystem::path(
+            std::wstring(path) + L".functions");
+
+    std::error_code ec;
+
+    if (std::filesystem::exists(functionDirectory, ec))
+    {
+        if (ec ||
+            !LoadProjectUserFunctions(path, loadedFunctions))
+        {
+            return false;
+        }
+    }
+    else if (ec)
+    {
+        return false;
+    }
+
     std::vector<Block> loadedBlocks;
     std::vector<int> loadedParents;
 
@@ -95,6 +121,9 @@ bool LoadProject(HWND hwnd)
     {
         return false;
     }
+
+    g_userFunctions = std::move(loadedFunctions);
+    RefreshFunctionList();
 
     InvalidateEditor();
     return true;

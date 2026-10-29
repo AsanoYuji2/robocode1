@@ -148,7 +148,7 @@ LRESULT CALLBACK WndProc(
             L"STATIC",
             L"左のカテゴリからブロックを選び、一覧からキャンバスへドラッグして組み立てます。",
             WS_CHILD | SS_LEFT,
-            12, 602, 205, 62,
+            12, 585, 220, 60,
             hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
         ShowWindow(g_functionHelpLabel, SW_SHOW);
 
@@ -1071,18 +1071,34 @@ LRESULT CALLBACK WndProc(
             return 0;
         }
 
-        //リストの右端にマウスが乗っているとき、カーソルを左右の矢印（↔）にする
-        if (g_showBlockList && g_blockList && IsWindowVisible(g_blockList))
-        {
-            RECT listRc;
-            GetWindowRect(g_blockList, &listRc);
-            ScreenToClient(hwnd, (LPPOINT)&listRc.left);
-            ScreenToClient(hwnd, (LPPOINT)&listRc.right);
+        // リストの右端にカーソルがあるときだけ、左右の矢印にする
+        bool onListRightEdge = false;
 
-            if (abs(p.x - listRc.right) <= 6 && p.y >= listRc.top && p.y <= listRc.bottom)
+        if (g_showBlockList &&
+            g_blockList &&
+            IsWindowVisible(g_blockList))
+        {
+            RECT listRc{};
+            GetWindowRect(g_blockList, &listRc);
+
+            ScreenToClient(hwnd, reinterpret_cast<LPPOINT>(&listRc.left));
+            ScreenToClient(hwnd, reinterpret_cast<LPPOINT>(&listRc.right));
+
+            if (abs(p.x - listRc.right) <= 10 &&
+                p.y >= listRc.top &&
+                p.y <= listRc.bottom)
             {
-                SetCursor(LoadCursor(nullptr, IDC_SIZEWE));
+                onListRightEdge = true;
             }
+        }
+
+        if (onListRightEdge && !g_draggingFromList)
+        {
+            SetCursor(LoadCursor(nullptr, IDC_SIZEWE));
+        }
+        else if (!g_isResizingList && !g_draggingFromList)
+        {
+            SetCursor(LoadCursor(nullptr, IDC_ARROW));
         }
 
 
@@ -1677,9 +1693,30 @@ LRESULT CALLBACK WndProc(
 
     case WM_DESTROY:
     {
-        if (g_numericEdit) FinishNumericEdit(hwnd, true);
-        if (g_isEditingFunction)
-            SaveCurrentFunction();
+        if (g_numericEdit)
+            FinishNumericEdit(hwnd, true);
+
+        // 終了時に関数編集状態を解除
+        g_isEditingFunction = false;
+        g_currentFunctionName.clear();
+
+        // 終了時に自作関数の保存ファイルを削除する
+        if (!ClearUserFunctionStorage())
+        {
+            MessageBoxW(
+                hwnd,
+                L"自作関数の保存ファイルを削除できませんでした。",
+                L"終了処理の警告",
+                MB_OK | MB_ICONWARNING
+            );
+        }
+
+        // 現在のプロジェクトで使用している関数一覧をリセット
+        g_userFunctions.clear();
+
+        // 関数編集用のブロックをリセット
+        g_functionManager.ReplaceBlocks({}, {});
+
         if (g_blockList && g_oldListProc)
         {
             SetWindowLongPtrW(

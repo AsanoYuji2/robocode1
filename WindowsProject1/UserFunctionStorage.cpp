@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -79,6 +80,56 @@ std::filesystem::path GetUserFunctionDirectory()
 
     return std::filesystem::path(executablePath).parent_path() / L"UserFunctions";
 }
+
+
+bool ClearUserFunctionStorage()
+{
+    const auto directory = GetUserFunctionDirectory();
+    std::error_code ec;
+
+    if (!std::filesystem::exists(directory, ec))
+        return !ec;
+
+    if (ec)
+        return false;
+
+    for (std::filesystem::directory_iterator it(directory, ec), end;
+        !ec && it != end;
+        it.increment(ec))
+    {
+        if (!it->is_regular_file(ec))
+        {
+            if (ec)
+                return false;
+
+            continue;
+        }
+
+        const std::wstring filename =
+            it->path().filename().wstring();
+
+        // 自作関数本体と、関数に付随する情報ファイルだけを対象にする
+        const bool isFunctionFile =
+            it->path().extension() == L".blk" ||
+            filename.size() >= 10 &&
+            filename.compare(
+                filename.size() - 10, 10, L".blk.calls") == 0 ||
+            filename.size() >= 11 &&
+            filename.compare(
+                filename.size() - 11, 11, L".blk.repeat") == 0;
+
+        if (isFunctionFile)
+        {
+            std::filesystem::remove(it->path(), ec);
+
+            if (ec)
+                return false;
+        }
+    }
+
+    return !ec;
+}
+
 
 bool IsValidUserFunctionName(const std::wstring& name, std::wstring* reason)
 {
@@ -204,6 +255,132 @@ bool LoadUserFunctions(std::vector<UserDefinedFunction>& functions)
         });
 
     return !ec;
+}
+
+bool SaveProjectUserFunctions(
+    const std::wstring& projectFilePath,
+    const std::vector<UserDefinedFunction>& functions)
+{
+    const std::filesystem::path directory =
+        std::filesystem::path(projectFilePath + L".functions");
+
+    std::error_code ec;
+
+    // このプロジェクト専用の保存フォルダを作り直す
+    std::filesystem::remove_all(directory, ec);
+    if (ec)
+        return false;
+
+    std::filesystem::create_directories(directory, ec);
+    if (ec)
+        return false;
+
+    for (const UserDefinedFunction& function : functions)
+    {
+        if (!IsValidUserFunctionName(function.name))
+            return false;
+
+        if (function.blocks.size() != function.parents.size() ||
+            function.blocks.size() != function.repeatBodies.size())
+            return false;
+
+        const std::filesystem::path path =
+            directory / (function.name + L".blk");
+
+        if (!BlockFileManager::SaveToFile(
+            path.wstring(),
+            function.blocks,
+            function.parents))
+        {
+            return false;
+        }
+
+        if (!SaveFunctionCallMetadata(
+            path.wstring(), function.blocks))
+        {
+            return false;
+        }
+
+        if (!SaveRepeatBodyMetadata(
+            path.wstring(), function.repeatBodies))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool LoadProjectUserFunctions(
+    const std::wstring& projectFilePath,
+    std::vector<UserDefinedFunction>& functions)
+{
+    functions.clear();
+
+    const std::filesystem::path directory =
+        std::filesystem::path(projectFilePath + L".functions");
+
+    std::error_code ec;
+
+    if (!std::filesystem::exists(directory, ec) || ec)
+        return false;
+
+    for (std::filesystem::directory_iterator it(directory, ec), end;
+        !ec && it != end;
+        it.increment(ec))
+    {
+        if (!it->is_regular_file(ec) || ec)
+        {
+            ec.clear();
+            continue;
+        }
+
+        if (it->path().extension() != L".blk")
+            continue;
+
+        const std::wstring name = it->path().stem().wstring();
+
+        if (!IsValidUserFunctionName(name))
+            continue;
+
+        UserDefinedFunction function;
+        function.name = name;
+
+        if (!BlockFileManager::LoadFromFile(
+            it->path().wstring(),
+            function.blocks,
+            function.parents))
+        {
+            return false;
+        }
+
+        LoadFunctionCallMetadata(
+            it->path().wstring(), function.blocks);
+
+        if (function.blocks.size() != function.parents.size())
+            return false;
+
+        LoadRepeatBodyMetadata(
+            it->path().wstring(),
+            function.blocks.size(),
+            function.repeatBodies);
+
+        functions.push_back(std::move(function));
+    }
+
+    if (ec)
+        return false;
+
+    std::sort(
+        functions.begin(),
+        functions.end(),
+        [](const UserDefinedFunction& a,
+            const UserDefinedFunction& b)
+        {
+            return a.name < b.name;
+        });
+
+    return true;
 }
 
 

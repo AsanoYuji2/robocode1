@@ -51,7 +51,7 @@ void SelectCategory(BlockCategory category)
         {
             // 初めて開く場合
             int oldLeft = g_canvasLeft;
-            int targetCanvasLeft = 220 + g_listWidth + 20;
+            int targetCanvasLeft = 220 + g_listWidth + 10;
             int maxCanvasLeft = clientRc.right - 340;
             if (targetCanvasLeft > maxCanvasLeft) targetCanvasLeft = maxCanvasLeft;
             if (targetCanvasLeft < 250) targetCanvasLeft = 250;

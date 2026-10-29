@@ -82,7 +82,7 @@ bool g_panning = false;
 bool g_isResizingList = false;
 HWND g_dragPreviewWnd = nullptr;
 
-int g_listWidth = 220;
+int g_listWidth = 220;//220
 
 BlockType g_dragBlockType = BlockType::Move;
 std::wstring g_dragBlockFunctionName; // ドラッグ中の自作関数名（空なら通常ブロック）
@@ -116,7 +116,7 @@ constexpr float INITIAL_VIEW_Y = 0.0f;
 // ============================================================
 
 //constexpr int CANVAS_LEFT = 320;
-int g_canvasLeft = 230;
+int g_canvasLeft = 230;  //230
 constexpr int CANVAS_TOP = 50;
 
 // ============================================================
