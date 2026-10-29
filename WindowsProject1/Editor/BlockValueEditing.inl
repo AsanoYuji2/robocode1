@@ -112,7 +112,19 @@ bool TryStartNumericEdit(HWND hwnd, POINT screenPoint, POINT worldPoint)
     const auto& blocks = ActiveManager().GetBlocks();
     for (int i = static_cast<int>(blocks.size()) - 1; i >= 0; --i)
     {
+        
         const Block& block = blocks[static_cast<size_t>(i)];
+
+        
+        // 「もし常に真なら」には数値入力欄を表示しない
+        if (block.type == BlockType::If &&
+            block.condition == ConditionType::Always)
+        {
+            continue;
+        }
+
+        
+
         int field = 0;
         std::wstring prefix = GetNumericPrefix(block, field);
         if (field == 0 || worldPoint.y < block.y + 8 || worldPoint.y > block.y + block.h - 4)
