@@ -148,7 +148,7 @@ LRESULT CALLBACK WndProc(
             L"STATIC",
             L"左のカテゴリからブロックを選び、一覧からキャンバスへドラッグして組み立てます。",
             WS_CHILD | SS_LEFT,
-            12, 585, 220, 60,
+            12, 600, 220, 70,
             hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
         ShowWindow(g_functionHelpLabel, SW_SHOW);
 
