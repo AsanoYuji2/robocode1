@@ -1,3 +1,5 @@
+
+
 int FindUserFunctionIndex(const std::wstring& name)
 {
 
@@ -173,6 +175,8 @@ bool SaveCurrentFunction()
 {
     if (!g_isEditingFunction || g_currentFunctionName.empty())
         return true;
+
+    FinishNumericEdit(g_mainWindow, true);
 
     UserDefinedFunction updated;
     updated.name = g_currentFunctionName;
