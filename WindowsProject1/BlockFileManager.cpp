@@ -14,7 +14,7 @@ namespace
         'B', 'L', 'K', 'E', 'D', 'T', 'R', '1'
     };
 
-    constexpr std::uint32_t SAVE_VERSION = 1;
+    constexpr std::uint32_t SAVE_VERSION = 2;
     constexpr std::uint32_t MAX_BLOCKS = 10000;
     constexpr std::uint32_t MAX_STRING_LENGTH = 4096;
 
@@ -189,7 +189,14 @@ bool BlockFileManager::SaveToFile(
             !WriteValue(file, static_cast<std::int32_t>(b.conditionValue)) ||
             !WriteString(file, b.variableName) ||
             !WriteValue(file, static_cast<std::int32_t>(b.value)) ||
-            !WriteValue(file, p))
+            !WriteValue(file, p) ||
+            !WriteValue(file, b.degrees) ||
+            !WriteValue(file, b.power) ||
+            !WriteValue(file, static_cast<std::uint32_t>(b.bodyColor)) ||
+            !WriteValue(file, static_cast<std::uint32_t>(b.gunColor)) ||
+            !WriteValue(file, static_cast<std::uint32_t>(b.radarColor)) ||
+            !WriteValue(file, static_cast<std::uint32_t>(b.bulletColor)) ||
+            !WriteValue(file, static_cast<std::uint32_t>(b.scanColor)))
         {
             return false;
         }
@@ -256,6 +263,13 @@ bool BlockFileManager::LoadFromFile(
         std::int32_t conditionValue = 0;
         std::int32_t value = 0;
         std::int32_t p = -1;
+        double degrees = 0.0;
+        double power = 1.0;
+        std::uint32_t bodyColor = 0;
+        std::uint32_t gunColor = 0;
+        std::uint32_t radarColor = 0;
+        std::uint32_t bulletColor = 0;
+        std::uint32_t scanColor = 0;
 
         if (!ReadValue(file, type) ||
             !ReadValue(file, x) ||
@@ -269,7 +283,14 @@ bool BlockFileManager::LoadFromFile(
             !ReadValue(file, conditionValue) ||
             !ReadString(file, b.variableName) ||
             !ReadValue(file, value) ||
-            !ReadValue(file, p))
+            !ReadValue(file, p) ||
+            !ReadValue(file, degrees) ||
+            !ReadValue(file, power) ||
+            !ReadValue(file, bodyColor) ||
+            !ReadValue(file, gunColor) ||
+            !ReadValue(file, radarColor) ||
+            !ReadValue(file, bulletColor) ||
+            !ReadValue(file, scanColor))
         {
             return false;
         }
@@ -307,6 +328,13 @@ bool BlockFileManager::LoadFromFile(
         b.repeatCount = static_cast<int>(repeatCount);
         b.conditionValue = static_cast<int>(conditionValue);
         b.value = static_cast<int>(value);
+        b.degrees = degrees;
+        b.power = power;
+        b.bodyColor = static_cast<COLORREF>(bodyColor);
+        b.gunColor = static_cast<COLORREF>(gunColor);
+        b.radarColor = static_cast<COLORREF>(radarColor);
+        b.bulletColor = static_cast<COLORREF>(bulletColor);
+        b.scanColor = static_cast<COLORREF>(scanColor);
 
         newBlocks.push_back(std::move(b));
         newParents.push_back(static_cast<int>(p));
