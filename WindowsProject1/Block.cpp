@@ -851,7 +851,15 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         {
             const std::wstring eventName = GetBlockName(b);
             RECT eventTextRect = { x + 12, y + 6, x + w - 8, y + headerH - 2 };
-            HFONT eventFont = CreateFontW(-15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+
+            // 特定のイベントブロックだけフォントを小さくする
+            const int eventFontHeight =
+                (b.type == BlockType::OnBulletHit ||
+                    b.type == BlockType::OnHitRobot)
+                ? -12
+                : -15;
+
+            HFONT eventFont = CreateFontW(eventFontHeight, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                 CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Meiryo UI");
             HGDIOBJ oldFont = eventFont ? SelectObject(hdc, eventFont) : nullptr;
@@ -1035,6 +1043,7 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
     const std::wstring name = GetBlockName(b);
 
     const int fontHeight =
+        (b.type == BlockType::ForwardBackwardGun360) ? -14 :
         IsSmallFontBlock(b.type) ? -14 : -16;
 
     HFONT font = CreateFontW(
