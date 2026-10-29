@@ -1703,6 +1703,3 @@ LRESULT CALLBACK WndProc(
 
 
 }
-
-
-

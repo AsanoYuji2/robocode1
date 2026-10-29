@@ -105,7 +105,7 @@ bool PromptForFunctionName(HWND owner, std::wstring& result)
         wc.cbSize = sizeof(wc);
         wc.lpfnWndProc = FunctionNameDialogProc;
         wc.hInstance = GetModuleHandleW(nullptr);
-        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         wc.lpszClassName = className;
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
