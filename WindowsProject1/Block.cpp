@@ -455,7 +455,7 @@ std::wstring GetBlockName(const Block& b)
         return L"砲塔を右に " +
             [&]() {
             std::wostringstream stream;
-            stream << std::fixed << std::setprecision(2) << b.degrees;
+            stream << std::fixed << std::setprecision(0) << b.degrees;
             return stream.str();
             }() + L" 度旋回";
 
@@ -463,7 +463,7 @@ std::wstring GetBlockName(const Block& b)
         return L"砲塔を左に " +
             [&]() {
             std::wostringstream stream;
-            stream << std::fixed << std::setprecision(2) << b.degrees;
+            stream << std::fixed << std::setprecision(0) << b.degrees;
             return stream.str();
             }() + L" 度旋回";
 
@@ -471,7 +471,7 @@ std::wstring GetBlockName(const Block& b)
         return L"レーダーを右に " +
             [&]() {
             std::wostringstream stream;
-            stream << std::fixed << std::setprecision(2) << b.degrees;
+            stream << std::fixed << std::setprecision(0) << b.degrees;
             return stream.str();
             }() + L" 度旋回";
 
@@ -479,7 +479,7 @@ std::wstring GetBlockName(const Block& b)
         return L"レーダーを左に " +
             [&]() {
             std::wostringstream stream;
-            stream << std::fixed << std::setprecision(2) << b.degrees;
+            stream << std::fixed << std::setprecision(0) << b.degrees;
             return stream.str();
             }() + L" 度旋回";
 
@@ -1103,16 +1103,16 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         numericText = FormatNumber(b.degrees);
         break;
 
-    case BlockType::TurnGunRight:
-    case BlockType::TurnGunLeft:
-    case BlockType::TurnRadarRight:
-    case BlockType::TurnRadarLeft:
-    {
-        wchar_t buffer[64]{};
-        swprintf_s(buffer, L"%.2f", b.degrees);
-        numericText = buffer;
-        break;
-    }
+   case BlockType::TurnGunRight:
+case BlockType::TurnGunLeft:
+case BlockType::TurnRadarRight:
+case BlockType::TurnRadarLeft:
+{
+    wchar_t buffer[64]{};
+    swprintf_s(buffer, L"%.0f", b.degrees);
+    numericText = buffer;
+    break;
+}
 
     case BlockType::FireBullet:
         numericText = FormatNumber(b.power);
@@ -1151,9 +1151,17 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
         b.type == BlockType::AddVariable ||
         b.type == BlockType::SubtractVariable;
 
+    
+    const bool isRotationBlock =
+        b.type == BlockType::TurnGunRight ||
+        b.type == BlockType::TurnGunLeft ||
+        b.type == BlockType::TurnRadarRight ||
+        b.type == BlockType::TurnRadarLeft;
+
     const bool shouldSplitText =
         isVariableBlock ||
         b.type == BlockType::Wait;
+    
 
     bool drewSplitText = false;
 
@@ -1189,13 +1197,55 @@ void DrawBlock(HDC hdc, const Block& b, bool glowing)
                 &numberSize
             );
 
-            // 数値入力欄の位置と幅
-            boxLeft = b.x + 12 + prefixSize.cx;
+           
+
+            // 旋回ブロックは「前進する」と同じ横位置にする
+            if (isRotationBlock)
+            {
+                const wchar_t* referenceText = L"前進する  ";
+
+                // 「前進する」と同じフォントサイズで幅を計測
+                HFONT referenceFont = CreateFontW(
+                    -16, 0, 0, 0, FW_NORMAL,
+                    FALSE, FALSE, FALSE,
+                    DEFAULT_CHARSET,
+                    OUT_DEFAULT_PRECIS,
+                    CLIP_DEFAULT_PRECIS,
+                    CLEARTYPE_QUALITY,
+                    DEFAULT_PITCH | FF_DONTCARE,
+                    L"Meiryo UI"
+                );
+
+                if (referenceFont)
+                {
+                    HGDIOBJ oldReferenceFont =
+                        SelectObject(hdc, referenceFont);
+
+                    SIZE referenceSize{};
+
+                    GetTextExtentPoint32W(
+                        hdc,
+                        referenceText,
+                        static_cast<int>(wcslen(referenceText)),
+                        &referenceSize
+                    );
+
+                    boxLeft = b.x + 12 + referenceSize.cx;
+
+                    SelectObject(hdc, oldReferenceFont);
+                    DeleteObject(referenceFont);
+                }
+            }
+            else
+            {
+                boxLeft = b.x + 12 + prefixSize.cx;
+            }
 
             boxWidth = (std::max)(
                 static_cast<int>(numberSize.cx) + 4,
                 30
                 );
+
 
             // 数値の前の文字は元の位置に描画
             RECT prefixRect = textRect;
