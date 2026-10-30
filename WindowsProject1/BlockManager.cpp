@@ -411,7 +411,69 @@ void BlockManager::OnMouseDown(HWND hwnd, int x, int y)
         return;
     }
 
-    // クリックしたブロックを選択
+    // Ctrl + クリックで選択状態を切り替える
+    if (GetKeyState(VK_CONTROL) & 0x8000)
+    {
+        auto it = std::find(
+            selectedBlocks.begin(),
+            selectedBlocks.end(),
+            hitIndex);
+
+        if (it != selectedBlocks.end())
+        {
+            // 既に選択されていれば解除
+            selectedBlocks.erase(it);
+        }
+        else
+        {
+            // 選択されていなければ追加
+            selectedBlocks.push_back(hitIndex);
+        }
+
+        selected = selectedBlocks.empty()
+            ? -1
+            : selectedBlocks.front();
+
+        dragging = false;
+        dragStarted = false;
+        dragBlocks.clear();
+
+        SetCapture(hwnd);
+        return;
+    }
+
+    // Ctrl + クリックで選択状態を切り替える
+    if (GetKeyState(VK_CONTROL) & 0x8000)
+    {
+        auto it = std::find(
+            selectedBlocks.begin(),
+            selectedBlocks.end(),
+            hitIndex);
+
+        if (it != selectedBlocks.end())
+        {
+            // 既に選択されていれば解除
+            selectedBlocks.erase(it);
+        }
+        else
+        {
+            // 選択されていなければ追加
+            selectedBlocks.push_back(hitIndex);
+        }
+
+        selected = selectedBlocks.empty()
+            ? -1
+            : selectedBlocks.front();
+
+        dragging = false;
+        dragStarted = false;
+        dragBlocks.clear();
+
+        SetCapture(hwnd);
+        return;
+    }
+
+    // 通常クリックでは従来どおり選択する
     bool clickedSelectedBlock =
         std::find(
             selectedBlocks.begin(),

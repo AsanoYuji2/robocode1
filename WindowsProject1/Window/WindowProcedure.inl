@@ -338,6 +338,19 @@ LRESULT CALLBACK WndProc(
 
     case WM_KEYDOWN:
     {
+        // Escキー：選択・範囲選択・ドラッグを解除
+        if (wParam == VK_ESCAPE)
+        {
+            ActiveManager().ClearSelection();
+            ActiveManager().EndRangeSelection();
+
+            if (GetCapture() == hwnd)
+                ReleaseCapture();
+
+            InvalidateEditor();
+            return 0;
+        }
+
         // Deleteキー
         if (wParam == VK_DELETE)
         {
@@ -382,20 +395,61 @@ LRESULT CALLBACK WndProc(
                 ActiveManager().CopySelectedBlock();
                 return 0;
 
+            case 'X':
+            {
+                // 選択ブロックをコピーしてから削除
+                if (ActiveManager().CopySelectedBlock())
+                {
+                    if (ActiveManager().DeleteSelectedBlock())
+                    {
+                        InvalidateEditor();
+                    }
+                }
+                return 0;
+            }
+
             case 'V':
             {
                 const auto& blocks = ActiveManager().GetBlocks();
                 int index = ActiveManager().GetSelectedBlockIndex();
 
+                int x = 0;
+                int y = 0;
+
+                // ブロックが選択されている場合は、選択ブロックの右下に貼り付ける
                 if (index >= 0 &&
                     index < static_cast<int>(blocks.size()))
                 {
-                    int x = blocks[index].x + 30;
-                    int y = blocks[index].y + 30;
-
-                    if (ActiveManager().PasteCopiedBlock(x, y))
-                        InvalidateEditor();
+                    x = blocks[index].x + 30;
+                    y = blocks[index].y + 30;
                 }
+                else
+                {
+                    // 選択されていない場合はマウスカーソル位置に貼り付ける
+                    POINT cursor;
+
+                    if (!GetCursorPos(&cursor))
+                        return 0;
+
+                    // 画面座標からウィンドウ内の座標に変換
+                    ScreenToClient(hwnd, &cursor);
+
+                    // キャンバス外なら貼り付けない
+                    if (!IsCanvasPoint(cursor))
+                        return 0;
+
+                    // ウィンドウ内の座標からワールド座標に変換
+                    POINT world = ActiveManager().ScreenToWorld(
+                        cursor.x,
+                        cursor.y
+                    );
+
+                    x = world.x;
+                    y = world.y;
+                }
+
+                if (ActiveManager().PasteCopiedBlock(x, y))
+                    InvalidateEditor();
 
                 return 0;
             }
@@ -729,20 +783,52 @@ LRESULT CALLBACK WndProc(
             ActiveManager().CopySelectedBlock();
             return 0;
 
+        case ID_SHORTCUT_CUT:
+        {
+            if (ActiveManager().CopySelectedBlock() &&
+                ActiveManager().DeleteSelectedBlock())
+            {
+                InvalidateEditor();
+            }
+            return 0;
+        }
         case ID_SHORTCUT_PASTE:
         {
             const auto& blocks = ActiveManager().GetBlocks();
             int index = ActiveManager().GetSelectedBlockIndex();
 
+            int x = 0;
+            int y = 0;
+
             if (index >= 0 &&
                 index < static_cast<int>(blocks.size()))
             {
-                int x = blocks[index].x + 30;
-                int y = blocks[index].y + 30;
-
-                if (ActiveManager().PasteCopiedBlock(x, y))
-                    InvalidateEditor();
+                x = blocks[index].x + 30;
+                y = blocks[index].y + 30;
             }
+            else
+            {
+                POINT cursor;
+
+                if (!GetCursorPos(&cursor))
+                    return 0;
+
+                ScreenToClient(hwnd, &cursor);
+
+                if (!IsCanvasPoint(cursor))
+                    return 0;
+
+                POINT world = ActiveManager().ScreenToWorld(
+                    cursor.x,
+                    cursor.y
+                );
+
+                x = world.x;
+                y = world.y;
+            }
+
+            if (ActiveManager().PasteCopiedBlock(x, y))
+                InvalidateEditor();
 
             return 0;
         }

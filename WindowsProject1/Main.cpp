@@ -142,6 +142,7 @@ constexpr int ID_SHORTCUT_REDO = 1014;
 constexpr int ID_SHORTCUT_COPY = 1015;
 constexpr int ID_SHORTCUT_PASTE = 1016;
 constexpr int ID_SHORTCUT_DELETE = 1017;
+constexpr int ID_SHORTCUT_CUT = 1020;
 constexpr int ID_UNDO = 1018;
 constexpr int ID_REDO = 1019;
 constexpr int ID_HELP_BUTTON = 1008;
